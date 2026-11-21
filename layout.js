@@ -48,7 +48,7 @@
   document.querySelectorAll('.lower-grid, .expert-grid').forEach(node => node.remove());
   const nav = [...document.querySelectorAll('[data-view]')];
   function showView(name, updateHash = true) {
-    if (!panels[name]) name = 'robot';
+    if (!panels[name]) name = 'order';
     for (const [key, panel] of Object.entries(panels)) panel.hidden = key !== name;
     nav.forEach(button => {
       const active = button.dataset.view === name;
