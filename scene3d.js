@@ -93,8 +93,18 @@ function buildScene(container) {
   scene.background = new THREE.Color(0xeaf1e9);
   scene.fog = new THREE.Fog(0xeaf1e9, 30, 58);
   const camera = new THREE.PerspectiveCamera(42, 1, .1, 100);
-  const startCamera = new THREE.Vector3(12.5, 15, 17);
+  const startCamera = new THREE.Vector3(10, 18, 22);
   camera.position.copy(startCamera); camera.lookAt(0, .3, 0);
+  const mobileCamera = new THREE.Vector3(0, 21, 26);
+  let mobileView = false;
+  const resetCamera = () => {
+    mobileView = container.clientWidth < 640;
+    camera.fov = mobileView ? 55 : 42;
+    camera.position.copy(mobileView ? mobileCamera : startCamera);
+    controls.target.set(0, .45, 0);
+    camera.updateProjectionMatrix();
+    controls.update();
+  };
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -252,6 +262,7 @@ function buildScene(container) {
   const clock = new THREE.Clock();
   const resize = () => {
     const width = Math.max(1, container.clientWidth), height = Math.max(1, container.clientHeight);
+    if ((width < 640) !== mobileView) resetCamera();
     camera.aspect = width / height; camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
   };
@@ -308,7 +319,7 @@ function buildScene(container) {
       });
     },
     resetCamera() {
-      camera.position.copy(startCamera); controls.target.set(0, .45, 0); controls.update();
+      resetCamera();
     },
   };
 }

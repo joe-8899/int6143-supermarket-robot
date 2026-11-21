@@ -13,17 +13,31 @@
     <meta name="description" content="INT6143 超市购物机器人完整流程交互演示：识别、预测、路径规划、避让、取货与结账。" />
     <title>超市机器人购物流程 · INT6143</title>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./ui.css" />
     <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/controls/OrbitControls.js":"./vendor/OrbitControls.js"}}</script>
+    <script defer src="./layout.js"></script>
     <script type="module" src="./app.js"></script>
   </head>
   <body>
     <div class="app-shell">
+      <aside class="app-navigation" aria-label="演示导航">
+        <div class="navigation-brand"><span class="brand-mark" aria-hidden="true">R</span><span>超市机器人<small>INT6143 · GROUP 3</small></span></div>
+        <p class="navigation-label">演示工作台</p>
+        <nav class="view-navigation" aria-label="主要页面">
+          <button type="button" data-view="order"><span aria-hidden="true">▦</span>顾客下单</button>
+          <button type="button" data-view="robot"><span aria-hidden="true">◉</span>机器人演示</button>
+          <button type="button" data-view="data"><span aria-hidden="true">◫</span>数据分析</button>
+          <button type="button" data-view="operations"><span aria-hidden="true">▤</span>库存与异常</button>
+          <button type="button" data-view="comparison"><span aria-hidden="true">◇</span>路线对比</button>
+        </nav>
+        <div class="navigation-foot">教学模拟 · 非真实设备测试</div>
+      </aside>
       <header class="masthead">
-        <div class="brand"><span class="brand-mark" aria-hidden="true">R</span><span>INT6143 <span class="brand-light">/ 交互演示</span></span></div>
-        <div class="masthead-right"><span class="status-dot"></span>教学模拟 · 非真实设备测试</div>
+        <div class="header-location"><span class="status-dot"></span><span>大型超市购物机器人</span><span class="header-divider">/</span><strong id="activeViewTitle">机器人演示</strong></div>
+        <div class="masthead-right"><button id="headerOrderBtn" class="header-action" type="button">顾客下单</button><button id="fullscreenBtn" class="header-action" type="button">全屏展示</button></div>
       </header>
 
-      <main>
+      <main id="appMain">
         <section class="intro" aria-labelledby="page-title">
           <div>
             <p class="eyebrow">SMART SUPERMARKET · INTERACTIVE DEMO</p>
