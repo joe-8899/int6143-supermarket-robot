@@ -98,6 +98,7 @@
                 <span><i class="legend-dot person"></i>行人</span>
                 <span><i class="legend-square"></i>货架</span>
               </div>
+              <p id="routeReason" class="route-reason">付款后显示按订单计算的货架访问顺序和路径代价。</p>
             </div>
 
             <div class="control-bar">
@@ -144,7 +145,7 @@
             <div class="logic-steps">
               <div><span class="logic-number">01</span><h3>识别与分类</h3><p>把前方目标分为行人、购物车或固定货架；商品按货架定位后核对。</p></div>
               <div><span class="logic-number">02</span><h3>人流预测</h3><p>以时段和货架人数教学样本计算拥堵程度及通行时间；未训练真实预测模型。</p></div>
-              <div><span class="logic-number">03</span><h3>路径规划</h3><p>A* 综合距离、预计延误和安全风险选路；货架始终不可通行。</p></div>
+              <div><span class="logic-number">03</span><h3>路径规划</h3><p>动态规划选择货架访问顺序；每段 A* 综合距离、预计延误和安全风险选路，货架不可通行。</p></div>
               <div><span class="logic-number">04</span><h3>实时避让</h3><p>遇到行人先减速或停车；通道拥堵时改道，无安全路线时等待。</p></div>
             </div>
             <p class="concept-note">购物篮关联分析、商品分区、客流分析和障碍物分类属于数据挖掘相关部分；本网页用教学样本和模拟分类事件说明逻辑，未训练真实模型。A* 使用这些结果规划路线；3D 动画不是机器人实验。</p>

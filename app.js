@@ -85,7 +85,45 @@ function astar(start,finish,scenario,slot,mode='full'){const open=new Set([key(s
 function avoidPeople(points,scenario,slot){const obstacles=peopleForScenario(scenario,slot).map(x=>x.point);obstacles.push(scenario==='peak'?[74,58.5]:[106,81]);const out=[points[0]];for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],length=dist(a,b),horizontal=a[1]===b[1],direction=Math.sign(horizontal?b[0]-a[0]:b[1]-a[1]);const near=obstacles.map(p=>({along:(horizontal?p[0]-a[0]:p[1]-a[1])*direction,side:horizontal?p[1]-a[1]:p[0]-a[0]})).filter(p=>p.along>3.2&&p.along<length-3.2&&Math.abs(p.side)<2.2).sort((x,y)=>x.along-y.along);let last=0;for(const p of near){if(p.along-3<last)continue;const side=p.side>=0?-2:2;const pt=(d,s)=>horizontal?[a[0]+direction*d,a[1]+s]:[a[0]+s,a[1]+direction*d];out.push(pt(p.along-3,0),pt(p.along-1.5,side),pt(p.along+1.5,side),pt(p.along+3,0));last=p.along+3;}out.push(b);}return out;}
 function planLeg(a,b,scenario,slot,mode='full'){const base=astar(a,b,scenario,slot,mode);if(!base)return null;const points=avoidPeople(base,scenario,slot),lengths=points.slice(1).map((p,i)=>dist(points[i],p));let cost=0,time=0,risk=0;for(let i=1;i<base.length;i++){const c=edgeCost(base[i-1],base[i],scenario,slot,mode);cost+=c.cost;time+=c.predictedTime;risk+=c.risk;}return {points,lengths,length:lengths.reduce((a,b)=>a+b,0),cost,time,risk};}
 function uniqueStops(lines){const map=new Map();for(const line of lines){const s=map.get(line.product.shelfId)||{shelfId:line.product.shelfId,point:line.product.point,lines:[]};s.lines.push(line);map.set(s.shelfId,s);}return [...map.values()];}
-function buildPlan(lines,scenario,slot,mode='full'){const stops=uniqueStops(lines),cache=new Map();const leg=(a,b)=>{const k=`${key(a)}>${key(b)}`;if(!cache.has(k))cache.set(k,planLeg(a,b,scenario,slot,mode));return cache.get(k);};let best=null;function evaluate(sequence){let from=STORE.entrance,cost=0;const legs=[];for(const stop of [...sequence,{point:STORE.checkout},{point:STORE.exit}]){const l=leg(from,stop.point);if(!l)return;legs.push(l);cost+=l.cost;from=stop.point;}if(!best||cost<best.cost)best={stops:[...sequence],legs,cost};}if(stops.length<=6){function perm(prefix,remaining){if(!remaining.length){evaluate(prefix);return;}remaining.forEach((s,i)=>perm([...prefix,s],remaining.filter((_,j)=>j!==i)));}perm([],stops);}else{const remaining=[...stops],sequence=[];let from=STORE.entrance;while(remaining.length){remaining.sort((a,b)=>(leg(from,a.point)?.cost??Infinity)-(leg(from,b.point)?.cost??Infinity));const s=remaining.shift();sequence.push(s);from=s.point;}evaluate(sequence);}if(!best)return null;best.points=best.legs.flatMap((l,i)=>i?l.points.slice(1):l.points);best.length=best.legs.reduce((n,l)=>n+l.length,0);best.time=best.legs.reduce((n,l)=>n+l.time,0)+stops.length*3+5;best.risk=best.legs.reduce((n,l)=>n+l.risk,0);return best;}
+function buildPlan(lines,scenario,slot,mode='full'){
+ const stops=uniqueStops(lines),n=stops.length,cache=new Map();
+ const leg=(a,b)=>{const k=`${key(a)}>${key(b)}`;if(!cache.has(k))cache.set(k,planLeg(a,b,scenario,slot,mode));return cache.get(k);};
+ const finish=leg(STORE.checkout,STORE.exit);
+ if(!finish)return null;
+ const start=stops.map(s=>leg(STORE.entrance,s.point));
+ const checkout=stops.map(s=>leg(s.point,STORE.checkout));
+ const between=stops.map((a,i)=>stops.map((b,j)=>i===j?null:leg(a.point,b.point)));
+ // Held-Karp 动态规划：枚举已访问货架集合，选出入口到结账处的最低总代价顺序。
+ const states=1<<n,all=states-1,costs=new Float64Array(states*n),previous=new Int8Array(states*n);
+ costs.fill(Infinity);previous.fill(-1);
+ for(let j=0;j<n;j++)if(start[j])costs[(1<<j)*n+j]=start[j].cost;
+ for(let mask=1;mask<states;mask++)for(let bits=mask;bits;bits&=bits-1){
+  const j=31-Math.clz32(bits&-bits),current=costs[mask*n+j];
+  if(!Number.isFinite(current))continue;
+  for(let remaining=all^mask;remaining;remaining&=remaining-1){
+   const k=31-Math.clz32(remaining&-remaining),step=between[j][k];
+   if(!step)continue;
+   const index=((mask|(1<<k))*n+k),next=current+step.cost;
+   if(next<costs[index]){costs[index]=next;previous[index]=j;}
+  }
+ }
+ let last=-1,bestCost=Infinity;
+ for(let j=0;j<n;j++)if(checkout[j]){
+  const total=costs[all*n+j]+checkout[j].cost+finish.cost;
+  if(total<bestCost){bestCost=total;last=j;}
+ }
+ if(last<0)return null;
+ const order=[];let mask=all;
+ while(last>=0){order.unshift(last);const parent=previous[mask*n+last];mask^=1<<last;last=parent;}
+ const orderedStops=order.map(i=>stops[i]);
+ const legs=[start[order[0]],...order.slice(1).map((j,i)=>between[order[i]][j]),checkout[order.at(-1)],finish];
+ const best={stops:orderedStops,legs,cost:bestCost};
+ best.points=legs.flatMap((l,i)=>i?l.points.slice(1):l.points);
+ best.length=legs.reduce((sum,l)=>sum+l.length,0);
+ best.time=legs.reduce((sum,l)=>sum+l.time,0)+n*3+5;
+ best.risk=legs.reduce((sum,l)=>sum+l.risk,0);
+ return best;
+}
 function drawBaseMap(){for(const x of STORE.aisleXs)svg('line',{x1:x*10,y1:820,x2:x*10,y2:80,class:'aisle-line'},$('aisles'));for(const y of STORE.crossYs)svg('line',{x1:50,y1:(90-y)*10,x2:1380,y2:(90-y)*10,class:'aisle-line'},$('aisles'));for(const s of shelves){const left=s.xMin*10,top=(90-s.yMax)*10,width=(s.xMax-s.xMin)*10,height=(s.yMax-s.yMin)*10;svg('rect',{x:left,y:top,width,height,rx:11,class:'shelf-rect'},$('shelves'));svg('text',{x:left+width/2,y:top+height/2-8,class:'shelf-caption'},$('shelves')).textContent=s.category;svg('text',{x:left+width/2,y:top+height/2+17,class:'shelf-code'},$('shelves')).textContent=`货架 ${s.id}`;}}
 function drawFixtures(){for(const f of layoutFixtures){svg('rect',{x:(f.x-f.w/2)*10,y:(STORE.height-f.y-f.h/2)*10,width:f.w*10,height:f.h*10,rx:8,class:'fixture-'+f.kind},$('fixtures'));svg('text',{x:f.x*10,y:(STORE.height-f.y)*10+4,class:'fixture-label'},$('fixtures')).textContent=f.label;}}
 function drawGate(point,label){svg('rect',{x:point[0]*10-28,y:(90-point[1])*10-14,width:56,height:28,rx:9,class:'gate'},$('destinations'));svg('text',{x:point[0]*10,y:(90-point[1])*10+4,class:'gate-label'},$('destinations')).textContent=label;}
@@ -119,8 +157,9 @@ function scoreExistingRoute(plan,scenario,slot){
  return {...plan,cost,time:time+plan.stops.length*3+5,risk};
 }
 function renderComparison(){
- if(!state.order){$('comparisonBody').innerHTML='<tr><td colspan="3">付款后按当前订单计算</td></tr>';$('comparisonInsight').textContent='原路线与新路线均使用同一订单和时段；请先提交订单。';return;}
+ if(!state.order){$('comparisonBody').innerHTML='<tr><td colspan="3">付款后按当前订单计算</td></tr>';$('comparisonInsight').textContent='原路线与新路线均使用同一订单和时段；请先提交订单。';$('routeReason').textContent='付款后显示按订单计算的货架访问顺序和路径代价。';return;}
  const a=scoreExistingRoute(state.normalPlan,state.scenario,state.slot),b=state.plan,changed=a.points.map(key).join('|')!==b.points.map(key).join('|');
+ $('routeReason').textContent=`访问顺序：入口 → ${b.stops.map(s=>`货架 ${s.shelfId}`).join(' → ')} → 结账 → 出口。比较全部 ${b.stops.length} 个取货货架的访问顺序，逐段用 A* 选路；当前综合代价 ${b.cost.toFixed(1)}（教学演示假设）。`;
  const rows=[['路线长度',`${a.length.toFixed(1)} 地图单位`,`${b.length.toFixed(1)} 地图单位`],['预计通行与取货时间',`${a.time.toFixed(1)} 演示秒`,`${b.time.toFixed(1)} 演示秒`],['安全风险值',a.risk.toFixed(1),b.risk.toFixed(1)],['综合路径代价',a.cost.toFixed(1),b.cost.toFixed(1)],['改道次数','0 次',changed?'1 次':'0 次']];
  $('comparisonBody').innerHTML=rows.map(row=>`<tr>${row.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('');
  $('comparisonInsight').textContent=`同一订单、${timeSlots.find(x=>x.id===state.slot).label} 教学样本，原路线也按当前客流重新评估：新路线比原路线${b.length>=a.length?'长':'短'} ${Math.abs(b.length-a.length).toFixed(1)} 地图单位，风险值${b.risk<=a.risk?'降低':'增加'} ${Math.abs(b.risk-a.risk).toFixed(1)}。${changed?'因当前人流风险重新规划。':'当前场景无需改道。'}代价 = 距离 + 0.45 × 预计时间 + 1.3 × 安全风险；数字均为教学演示假设，动画已加速。`;
@@ -248,7 +287,7 @@ function playPause(){
  if(!state.order){status('请先完成教学模拟付款','在上方选择商品、加入购物车，再点「教学模拟付款并提交订单」。','等待订单');log('未收到已付款订单，机器人不能出发。');return;}
  if(orderWeight()>CAPACITY){status('无法出发：载重超限',`订单 ${kg(orderWeight())} 超过 ${kg(CAPACITY)} 上限。`,'超载');log('载重检查失败，机器人保持在入口。');return;}
  if(state.running){state.running=false;state.lastFrame=0;$('playLabel').textContent='继续播放';$('playBtn').firstElementChild.textContent='▶';status('演示已暂停','点击继续播放，机器人会从当前位置继续。','暂停');renderProgress();renderQueue();return;}
- if(state.stage===0&&state.elapsed===0){log(`载重检查通过：${kg(orderWeight())} / ${kg(CAPACITY)}。`);log(`比较 ${state.plan.stops.length<=6?'全部':'启发式'}货架访问顺序，逐段 A* 规划；机器人从入口进入。`);if(state.scenario==='peak')log('识别中部通道高拥堵与安全风险：重新规划，橙色原路线改为绿色安全路线。');}
+ if(state.stage===0&&state.elapsed===0){log(`载重检查通过：${kg(orderWeight())} / ${kg(CAPACITY)}。`);log('用动态规划比较货架访问顺序，逐段 A* 规划；机器人从入口进入。');if(state.scenario==='peak')log('识别中部通道高拥堵与安全风险：重新规划，橙色原路线改为绿色安全路线。');}
  state.running=true;state.lastFrame=0;$('playLabel').textContent='暂停演示';$('playBtn').firstElementChild.textContent='Ⅱ';status(`前往${nextName()}`,'沿规划通道行驶，模拟识别人、购物车和固定货架。',state.blocked?'安全停车':'行驶中');renderProgress();renderQueue();requestAnimationFrame(animate);
 }
 function toggleBlock(){state.blocked=!state.blocked;log(state.blocked?'安全测试：全部通道封闭，机器人停车等待。':'安全测试：通道重新开放，可继续沿路线行驶。');if(state.blocked)status('安全停车等待','全部通道封闭，机器人不穿过人群。','安全停车');else status('通道重新开放','恢复安全路线后继续购物。',state.running?'行驶中':'待机');renderScene();}
