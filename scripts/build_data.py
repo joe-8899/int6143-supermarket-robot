@@ -186,6 +186,11 @@ def main(source):
         frequency[pid] += 1
         reordered[pid] += int(row["reordered"])
     n_baskets = len(baskets)
+    for p in products:
+        count = frequency[p["id"]]
+        p["frequency"] = count
+        p["reorderedCount"] = reordered[p["id"]]
+        p["reorderRate"] = round(reordered[p["id"]]/count, 4) if count else None
     for dept, items in by_department.items():
         write(f"catalog/department-{dept}.json", items)
     search_shards = defaultdict(list)

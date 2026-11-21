@@ -47,7 +47,8 @@ export function convertProduct(row) {
     price:(row.priceUsd || 0)*CNY_PER_USD, priceUsd:row.priceUsd,
     weight:(row.weightG || 0)/1000, weightG:row.weightG, calories100g:row.calories100g,
     priceMethod:row.priceMethod, weightMethod:row.weightMethod, calorieMethod:row.calorieMethod,
-    dataQuality:row.quality, capacity:20, stock:20, source:'Instacart 商品名称与类别；属性为估算',
+    dataQuality:row.quality, frequency:row.frequency, reorderedCount:row.reorderedCount,
+    reorderRate:row.reorderRate, capacity:20, stock:20, source:'Instacart 商品名称与类别；属性为估算',
   };
 }
 
@@ -140,6 +141,7 @@ export function renderResearchDashboard(data) {
   ['ruleSupport','ruleConfidence'].forEach(id => document.getElementById(id).addEventListener('input', renderFilteredRules));
   renderFilteredRules();
   document.getElementById('kDiagnostics').innerHTML = `<table><thead><tr><th>K</th><th>类内平方和</th><th>轮廓系数</th></tr></thead><tbody>${c.kValues.map(x=>`<tr><td>${x.k}</td><td>${x.inertia.toFixed(1)}</td><td>${x.silhouette?.toFixed(3) ?? '无'}</td></tr>`).join('')}</tbody></table>`;
+  document.getElementById('kDiagnostics').insertAdjacentHTML('beforeend', `<p>肘部法曲线（类内平方和越低越好，选 K=${c.selectedK}）</p>${barChart(c.kValues.map(x=>({range:`K=${x.k}`,count:x.inertia})))}`);
   const colors = ['#13a89e','#3b82f6','#ef9c36','#ad70d2','#e45b69','#7c9b43','#344f72'];
   document.getElementById('clusterPlot').innerHTML = c.points.map(([x,y,label])=>`<i title="聚类 ${label}" style="left:${(x+1)*50}%;top:${(1-y)*50}%;background:${colors[(label-1)%colors.length]}"></i>`).join('');
   document.getElementById('clusterCards').innerHTML = c.clusters.map(group=>`<div class="cluster-card"><b>聚类 ${group.id} · ${count(group.count)} 件</b><small>均价 $${group.avgPriceUsd} · 均重 ${group.avgWeightG}g · 热量 ${group.avgCalories100g}kcal/100g · 复购 ${((group.avgReorderRate||0)*100).toFixed(1)}%</small><span>代表商品：${group.representatives.map(escapeHtml).join('、')}</span></div>`).join('');
