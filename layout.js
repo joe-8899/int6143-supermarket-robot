@@ -4,7 +4,7 @@
   const sections = {
     order: ['.intro', '.order-section'],
     robot: ['.workspace', '.event-section'],
-    data: ['.analytics-grid', '.explanation-card', '.info-card:has(#dataAudit)', '.expert-grid > .info-card:last-child'],
+    data: ['.research-dashboard', '.analytics-grid', '.explanation-card', '.info-card:has(#dataAudit)', '.expert-grid > .info-card:last-child'],
     operations: ['.inventory-panel', '.info-card:has(#pickupFeasibility)', '.info-card:has(#faultSelect)'],
     comparison: ['.comparison-card', '.info-card:has(#benchmarkBtn)'],
   };

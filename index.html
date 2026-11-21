@@ -10,10 +10,11 @@
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f5f4ee" />
-    <meta name="description" content="INT6143 超市购物机器人完整流程交互演示：识别、预测、路径规划、避让、取货与结账。" />
-    <title>超市机器人购物流程 · INT6143</title>
+    <meta name="description" content="INT6143 Group 3：真实 Instacart 订单数据分析与超市购物机器人教学演示。" />
+    <title>INT6143 Smart Supermarket Robot · Data Mining & Intelligent Navigation System</title>
     <link rel="stylesheet" href="./style.css" />
     <link rel="stylesheet" href="./ui.css" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/controls/OrbitControls.js":"./vendor/OrbitControls.js"}}</script>
     <script defer src="./layout.js"></script>
     <script type="module" src="./app.js"></script>
@@ -48,15 +49,16 @@
         </section>
 
         <section class="order-section" aria-labelledby="order-title">
-          <div class="order-head"><div><p class="section-kicker">01 / 顾客下单</p><h2 id="order-title">选择商品，模拟付款</h2><p>商品、价格、重量、库存和客流均为教学演示假设；不收集银行卡资料。</p></div><button id="demoOrderBtn" class="secondary-btn" type="button">装入课堂示例订单</button></div>
-          <div class="order-grid"><div class="order-panel"><div class="catalog-filters"><label>搜索商品<input id="productSearch" type="search" placeholder="例如：苹果、牛奶、大米" /></label><label>商品大类<select id="categoryFilter"></select></label><label>细分类<select id="subcategoryFilter"></select></label></div><div id="catalogue" class="catalogue"></div></div>
-          <div class="order-panel cart-panel"><h3>顾客购物车</h3><div id="cartList"></div><div id="cartSummary" class="cart-summary"></div><p id="minimumNotice" class="order-message" role="status"></p><p id="orderMessage" class="order-message" role="status">尚未提交订单。机器人等待顾客完成教学模拟付款。</p><button id="submitOrderBtn" type="button" class="primary-btn order-submit">教学模拟付款并提交订单</button><p class="assumption">机器人起购金额 ¥30.00（教学演示假设）；此按钮不发起真实交易。</p><div class="recommend-box"><h3>关联商品推荐</h3><div id="recommendations"></div></div></div></div>
+          <div class="order-head"><div><p class="section-kicker">01 / 顾客下单</p><h2 id="order-title">选择真实商品，模拟付款</h2><p>商品名称与类别来自 Instacart；价格、重量和热量是估算值，库存、货架坐标、人民币换算与客流为教学演示假设。不收集银行卡资料。</p></div><button id="demoOrderBtn" class="secondary-btn" type="button">装入真实商品示例订单</button></div>
+          <div class="order-grid"><div class="order-panel"><div class="catalog-filters"><label>搜索英文商品名<input id="productSearch" type="search" placeholder="例如：milk、banana、bread" /></label><label>商品 department<select id="categoryFilter"></select></label><label>商品 aisle<select id="subcategoryFilter"></select></label></div><div id="catalogue" class="catalogue"></div><p class="assumption">每次只读取匹配部门的数据，列表最多显示 36 件；输入英文原名或关键词搜索。</p></div>
+          <div class="order-panel cart-panel"><h3>顾客购物车</h3><div id="cartList"></div><div id="cartSummary" class="cart-summary"></div><p id="minimumNotice" class="order-message" role="status"></p><p id="orderMessage" class="order-message" role="status">尚未提交订单。机器人等待顾客完成教学模拟付款。</p><button id="submitOrderBtn" type="button" class="primary-btn order-submit">教学模拟付款并提交订单</button><p class="assumption">起购金额 ¥30、固定教学换算 1 USD＝¥7、12 kg 载重均为设计假设；这里不发起真实交易。</p><div class="recommend-box"><h3>真实购物篮关联商品推荐</h3><div id="recommendations"></div></div></div></div>
           <div class="queue-panel"><div><p class="section-kicker">订单队列 · 教学模拟</p><h3>机器人按提交顺序处理</h3><p>当前订单执行中仍可提交下一张订单；新购物车不会改动已付款订单。队列只在本次网页会话保留，刷新后清空。</p></div><ol id="orderQueue" aria-live="polite"></ol></div>
         </section>
 
         <section class="inventory-panel" aria-label="库存预警与人工补货"><div><p class="section-kicker">库存管理 · 教学模拟</p><h2>低于 10% 自动预警，员工确认补货</h2><p>每种商品货架容量假设为 20 件；库存 1 件是 5%，0 件提前提示缺货。系统发出提醒，员工点击后才更新库存。</p></div><div id="inventoryAlerts" class="inventory-alerts" aria-live="polite"></div></section>
 
-        <section class="analytics-grid" aria-label="教学数据分析"><div class="info-card"><p class="section-kicker">02 / 分时段客流</p><h2>哪个货架附近更拥挤？</h2><label class="time-select">选择工作日时段 <select id="timeSlot"></select></label><p id="crowdSummary" class="card-subcopy"></p><div id="crowdTable" class="crowd-table"></div><p class="assumption">热力颜色与人数由下方 18 货架教学样本计算，并同步显示在 3D 场景。不是实际客流预测。</p></div><div class="info-card"><p class="section-kicker">03 / 共购与陈列</p><h2>教学购物篮关联分析</h2><p id="miningMethod" class="card-subcopy"></p><div id="ruleTable" class="rule-table"></div><h3>相邻陈列建议</h3><div id="shelfSuggestions"></div></div></section>
+        <section id="researchDashboard" class="research-dashboard" aria-label="真实数据分析仪表盘"><p>正在读取真实数据分析结果…</p></section>
+        <section class="analytics-grid" aria-label="数据与教学模拟"><div class="info-card"><p class="section-kicker">02 / 分时段客流模拟</p><h2>哪个货架附近更拥挤？</h2><label class="time-select">选择工作日时段 <select id="timeSlot"></select></label><p id="crowdSummary" class="card-subcopy"></p><div id="crowdTable" class="crowd-table"></div><p class="assumption">热力颜色与人数由 18 个货架教学样本计算，同步显示在 3D 场景。Instacart 订单时段不能当作真实店内客流。</p></div><div class="info-card"><p class="section-kicker">03 / 共购与陈列</p><h2>真实购物篮关联分析</h2><p id="miningMethod" class="card-subcopy"></p><div id="ruleTable" class="rule-table"></div><h3>相邻陈列建议</h3><div id="shelfSuggestions"></div></div></section>
 
         <section class="workspace" aria-label="机器人购物演示">
           <div class="map-column">
@@ -144,11 +146,11 @@
             <p class="section-kicker">08 / 数据如何改变路线</p><h2>识别 → 预测 → 规划 → 避让</h2>
             <div class="logic-steps">
               <div><span class="logic-number">01</span><h3>识别与分类</h3><p>把前方目标分为行人、购物车或固定货架；商品按货架定位后核对。</p></div>
-              <div><span class="logic-number">02</span><h3>人流预测</h3><p>以时段和货架人数教学样本计算拥堵程度及通行时间；未训练真实预测模型。</p></div>
+              <div><span class="logic-number">02</span><h3>客流情景估计</h3><p>以时段和货架人数教学样本计算拥堵程度及通行时间；未训练真实预测模型。</p></div>
               <div><span class="logic-number">03</span><h3>路径规划</h3><p>动态规划选择货架访问顺序；每段 A* 综合距离、预计延误和安全风险选路，货架不可通行。</p></div>
               <div><span class="logic-number">04</span><h3>实时避让</h3><p>遇到行人先减速或停车；通道拥堵时改道，无安全路线时等待。</p></div>
             </div>
-            <p class="concept-note">购物篮关联分析、商品分区、客流分析和障碍物分类属于数据挖掘相关部分；本网页用教学样本和模拟分类事件说明逻辑，未训练真实模型。A* 使用这些结果规划路线；3D 动画不是机器人实验。</p>
+            <p class="concept-note">关联规则与 K-means 已用 Instacart 数据离线计算。客流、障碍物分类和通行时间仍是教学模拟，未训练真实传感器分类器或通行时间回归模型。A* 与 Held-Karp 使用订单及模拟环境规划路线；3D 动画不是实物实验。</p>
           </div>
           <div class="info-card comparison-card">
             <p class="section-kicker">09 / 改道指标对比</p><h2>原路线与新路线</h2>
@@ -159,17 +161,17 @@
         </section>
 
         <section class="expert-grid" aria-label="专业验证与运营边界">
-          <div class="info-card"><p class="section-kicker">10 / 可复核的路线对照</p><h2>同一订单，逐项加入信息</h2><p>固定当前订单、时段与人流，比较“仅距离”“距离＋通行时间”“距离＋时间＋风险”三种 A* 成本。仅距离是研究基线，可能不安全，机器人不会按它执行。</p><button id="benchmarkBtn" type="button" class="secondary-btn">计算当前订单对照</button><div id="benchmarkResult" class="expert-result" role="status">请先模拟付款，再点击计算。</div><p class="assumption">另外枚举四个工作日时段 × 两种人流，共 8 个固定教学场景；这不是随机重复实验。关联规则与 K-means 尚无真实训练数据，不能宣称消融效果。</p></div>
+          <div class="info-card"><p class="section-kicker">10 / 可复核的路线对照</p><h2>同一订单，逐项加入信息</h2><p>固定当前订单、时段与人流，比较“仅距离”“距离＋通行时间”“距离＋时间＋风险”三种 A* 成本。仅距离是研究基线，可能不安全，机器人不会按它执行。</p><button id="benchmarkBtn" type="button" class="secondary-btn">计算当前订单对照</button><div id="benchmarkResult" class="expert-result" role="status">请先模拟付款，再点击计算。</div><p class="assumption">另外枚举四个工作日时段 × 两种人流，共 8 个固定教学场景；这不是随机重复实验。规则与聚类已由 Instacart 数据计算，但本对照只比较路径成本，没有做推荐或聚类的消融实验。</p></div>
           <div class="info-card"><p class="section-kicker">11 / 数据质量与漂移</p><h2>先检查样本，再谈预测</h2><p id="dataAudit" class="expert-result"></p><p id="driftAudit" class="expert-result"></p><p class="assumption">以 09:00 为教学基线；单个货架人数相差至少 3 人时提示重新采样。缺少真实通行时间、传感器标注与跨周测试集，因此没有训练回归或分类模型。</p></div>
           <div class="info-card"><p class="section-kicker">12 / 实物取货可行性</p><h2>商品能否由机器人取走？</h2><div id="pickupFeasibility" class="expert-result"></div><p>重箱、海鲜、肉类及冷冻商品在本演示中需要员工核对并协助取货；冷链商品须保持温控。网页没有抓手、条码枪或制冷设备，不能证明自主抓取能力。</p></div>
           <div class="info-card"><p class="section-kicker">13 / 故障演练</p><h2>意外发生时安全停车</h2><label class="time-select">选择教学故障 <select id="faultSelect"><option value="sensor">传感器暂时失效</option><option value="localization">定位丢失</option><option value="network">订单网络中断</option><option value="battery">电量不足</option><option value="wrongItem">商品核对不一致</option></select></label><div class="expert-actions"><button id="injectFaultBtn" type="button" class="secondary-btn">注入故障</button><button id="clearFaultBtn" type="button" class="secondary-btn">人工排查后恢复</button></div><p id="faultState" class="expert-result" role="status">当前无故障。</p><p>故障期间停止移动；人工排查并确认后才恢复。出口无人取货由现有交接步骤继续等待。</p></div>
-          <div class="info-card"><p class="section-kicker">14 / 推荐效果待验证</p><h2>共购关联不等于增购效果</h2><p>当前推荐来自 12 篮教学样本的共购比例。真实评估需在获得授权后，将顾客随机分成显示推荐与不显示推荐两组，比较加购、购买及退货率；同时检查冷链、食品与日化分隔。网页未开展顾客 A/B 实验，也没有真实销售提升数据。</p></div>
+          <div class="info-card"><p class="section-kicker">14 / 推荐效果待验证</p><h2>共购关联不等于增购效果</h2><p>当前推荐来自真实 Instacart train 购物篮的 Apriori 共购规则。实际效果仍需在获得授权后开展随机对照，比较加购、购买及退货率；同时检查冷链、食品与日化分隔。网页未开展顾客 A/B 实验，也没有真实销售提升数据。</p></div>
         </section>
 
         <section class="event-section" aria-labelledby="event-title"><div><p class="section-kicker">15 / 实时事件</p><h2 id="event-title">机器人决策记录</h2></div><ul id="eventLog" class="event-log" aria-live="polite"></ul></section>
       </main>
 
-      <footer><span>INT6143 · 小组作业交互演示</span><span>地图、重量、人流与时间均为教学演示假设</span></footer>
+      <footer><span>INT6143 · Group 3 · Instacart 数据分析＋机器人教学演示</span><span>商品属性为估算；货架、客流、路线时间与机器人行为为教学模拟</span></footer>
     </div>
   </body>
 </html>

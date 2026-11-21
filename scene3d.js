@@ -1,7 +1,7 @@
 // 3D 画面：绘制超市、货架、顾客、机器人和路线。
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { STORE, shelves, layoutFixtures, products, peopleForScenario, shelfCrowd } from "./storeData.js";
+import { STORE, shelves, layoutFixtures, peopleForScenario, shelfCrowd } from "./storeData.js";
 
 const X_SCALE = .17;
 const floorPoint = ([x, y], height = .025) => new THREE.Vector3((x - STORE.width / 2) * X_SCALE, height, (STORE.height / 2 - y) * X_SCALE);
@@ -186,7 +186,7 @@ function buildScene(container) {
     }
     const label = makeLabel(shelf.category, "#ffffff", "#234a36", shelf.category.length > 3 ? .84 : 1);
     label.position.set(0, 2.12, 0); rack.add(label);
-    const names=products.filter(p=>p.shelfId===shelf.id).slice(0,2).map(p=>p.name).join(" · ");
+    const names='教学货架位置';
     const productLabel=makeLabel(names,"#f4f7ef","#416b50",.61);
     productLabel.position.set(0,2.52,0);rack.add(productLabel);
   });
@@ -292,7 +292,7 @@ function buildScene(container) {
         }
       });
       crowdZone.visible = peak;
-      const cp = floorPoint(peak ? [74, 58.5] : [106, 81], 0);
+      const cp = floorPoint(peak ? [74, 36.5] : [106, 81], 0);
       cart.position.set(cp.x, 0, cp.z);
     },
     setRoutes(current, original) {

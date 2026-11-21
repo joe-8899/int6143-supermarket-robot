@@ -1,4 +1,4 @@
-// 全部商品、货架、客流数字均为可复核的教学演示假设。
+// 货架、客流与库存压力测试商品为教学演示假设；真实商品目录来自 public/data。
 export const STORE = { width:140, height:90, entrance:[5,8], checkout:[130,8], exit:[138,8], aisleXs:[20,40,60,80,100,120], crossYs:[8,34,56,82], verticalYs:[8,22,34,45,56,67,82] };
 // 参考用户提供的布局图：三排中央岛架依次是食品杂货、饮品包装食品、日化用品。
 const shelfNames = [["个人护理", "日用品", "清洁用品", "母婴用品", "文具", "宠物用品"], ["饮料", "乳制品", "烘焙", "零食", "速食", "冷冻食品"], ["生鲜", "海鲜", "肉类", "粮油", "豆制品", "调味品"]];
@@ -47,14 +47,8 @@ export const crowdSamples={
 export function shelfCrowd(slot,shelfId){return crowdSamples[slot]?.[shelves.findIndex(s=>s.id===shelfId)]??0;}
 export function peopleForScenario(scenario,slot='09'){
  const result=shelves.map((s,i)=>({id:`P${i+1}`,zone:s.category,point:[s.point[0]+1.7+(slot==='20'?.7:slot==='13'?-.6:0),s.point[1]+(i%2?3:-3)+(slot==='18'?.7:0)]}));
- if(scenario==='peak') result.push({id:'H1',zone:'乳制品附近',point:[43,51]},{id:'H2',zone:'中部通道',point:[53,56]},{id:'H3',zone:'中部通道',point:[69,56]},{id:'H4',zone:'粮油附近',point:[82,72]});
+ if(scenario==='peak') result.push({id:'H1',zone:'乳制品附近',point:[43,51]},{id:'H2',zone:'中部通道',point:[53,34]},{id:'H3',zone:'中部通道',point:[69,34]},{id:'H4',zone:'粮油附近',point:[82,72]});
  if(slot==='13') result.push({id:'T13',zone:'饮料附近',point:[22,30]});
  if(slot==='18') result.push({id:'T18',zone:'乳制品附近',point:[43,52]},{id:'T18b',zone:'粮油附近',point:[82,76]});
  return result;
 }
-// 12 篮教学购物样本。每个篮子只记录商品 ID，网页现场计算关联规则。
-const basketsByName=[
-['苹果','纯牛奶','吐司'],['苹果','纯牛奶','饼干'],['苹果','纯牛奶','香蕉'],['纯牛奶','吐司','鸡胸肉'],['纯牛奶','吐司','酸奶'],['苹果','纯牛奶','吐司'],
-['大米','食用油','酱油'],['大米','食用油','豆腐'],['大米','食用油','鸡胸肉'],['大米','食用油','酱油'],['洗衣液','纸巾','垃圾袋'],['洗衣液','纸巾','清洁喷雾']
-];
-export const basketSamples=basketsByName.map(names=>names.map(name=>products.find(p=>p.name===name).id));

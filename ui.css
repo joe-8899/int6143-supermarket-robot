@@ -110,3 +110,38 @@ footer{grid-column:2;grid-row:3;margin:0;border-color:#d9e2e7;font-size:12px}
   .map-scale{display:none}
   .map-legend{font-size:10px}
 }
+/* Instacart 离线分析结果：与现有教学演示沿用同一套卡片视觉。 */
+.research-dashboard{display:grid;gap:20px}
+.research-hero{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;background:#203e54;color:#fff;border-radius:22px;padding:28px}
+.research-hero h2{margin:4px 0 8px;font-size:clamp(24px,3vw,36px)}
+.research-hero p{max-width:800px;line-height:1.65}
+.research-hero .section-kicker{color:#85d2c5}
+.research-badge{white-space:nowrap;background:#2c5a65;border-radius:99px;padding:8px 14px;font-size:13px}
+.research-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.research-stats>div{background:#fff;border:1px solid #dbe4e6;border-radius:16px;padding:18px;display:grid;gap:6px}
+.research-stats b{color:#183b50;font-size:clamp(19px,2vw,28px)}
+.research-stats span{color:#667b86;font-size:13px}
+.research-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.research-dashboard .info-card{min-width:0}
+.research-bars{display:grid;gap:5px;margin:10px 0 18px}
+.research-bar{display:grid;grid-template-columns:74px 1fr 68px;gap:8px;align-items:center;font-size:11px}
+.research-bar div{height:7px;background:#e9f0f0;border-radius:99px;overflow:hidden}
+.research-bar i{display:block;height:100%;background:#20a49c;border-radius:99px}
+.research-bar b{text-align:right;font-size:11px}
+.research-controls{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.research-controls label{display:grid;gap:4px;font-size:13px}
+.research-controls input{max-width:140px;border:1px solid #cbd9dc;border-radius:8px;padding:8px;background:#fff}
+.research-list{padding-left:22px;line-height:1.8;font-size:13px}
+.rule-network{display:grid;gap:6px;margin-top:15px}
+.rule-network div{display:flex;align-items:center;gap:8px;font-size:12px;border:1px solid #e0e8e8;border-radius:8px;padding:7px}
+.rule-network span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rule-network i{color:#168d88;font-style:normal;flex:none}
+.cluster-plot{position:relative;height:210px;border:1px solid #dce7e8;border-radius:12px;background:linear-gradient(90deg,transparent 49.8%,#e7eeee 50%,transparent 50.2%),linear-gradient(0deg,transparent 49.8%,#e7eeee 50%,transparent 50.2%);overflow:hidden;margin:15px 0}
+.cluster-plot i{position:absolute;width:5px;height:5px;border-radius:50%;opacity:.6}
+.cluster-card{display:grid;gap:4px;border-top:1px solid #e4ebeb;padding:10px 0;font-size:12px}
+.cluster-card small{font-size:12px;color:#657984}
+.quality-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.quality-grid>div{border:1px solid #e1e9e9;border-radius:12px;padding:14px}
+.quality-grid p{margin:6px 0 0}
+@media(max-width:900px){.research-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.research-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.research-hero{display:block;padding:20px}.research-badge{display:inline-block;margin-top:10px}.research-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.quality-grid{grid-template-columns:1fr}.research-bar{grid-template-columns:64px 1fr 55px}}

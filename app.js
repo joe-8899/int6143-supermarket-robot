@@ -1,41 +1,41 @@
 // 顾客订单、教学数据计算、A* 规划与 3D 动画共用 storeData.js。
 import { createStoreScene } from './scene3d.js';
-import { STORE, shelves, layoutFixtures, products, basketSamples, timeSlots, crowdSamples, shelfCrowd, peopleForScenario } from './storeData.js';
+import { STORE, shelves, layoutFixtures, products, timeSlots, crowdSamples, shelfCrowd, peopleForScenario } from './storeData.js';
+import { loadResearch, searchCatalog, convertProduct, propertyLabels, renderResearchDashboard, escapeHtml } from './instacart.js';
 const $=id=>document.getElementById(id), SVG='http://www.w3.org/2000/svg', CAPACITY=12, MIN_ORDER=30;
 const key=p=>p.join(','), dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]), money=n=>`¥${n.toFixed(2)}`, kg=n=>`${n.toFixed(2)} kg`;
 const productById=new Map(products.map(p=>[p.id,p]));
+let research=null,catalogResults=[],catalogRequest=0,catalogTimer=0;
 const substituteNames={'苹果':'香蕉','香蕉':'苹果','橙子':'苹果','纯牛奶':'低脂牛奶','低脂牛奶':'纯牛奶','大米':'糙米','糙米':'大米','洗衣液':'浓缩洗衣液','浓缩洗衣液':'洗衣液','鸡胸肉':'猪肉','猪肉':'鸡胸肉','鲜虾':'三文鱼','三文鱼':'鲜虾'};
-const substituteFor=product=>products.find(p=>p.name===substituteNames[product.name]);
+const substituteFor=product=>product.sourceId?([...productById.values()].find(p=>p.sourceId&&p.id!==product.id&&p.aisleId===product.aisleId&&p.stock>0)||null):products.find(p=>p.name===substituteNames[product.name]);
 const state={cart:new Map(),queue:[],completed:[],orderCounter:0,stockoutId:'',shortage:null,resolutions:new Map(),assistPending:null,assistedShelves:new Set(),awaitingPickup:false,order:null,scenario:'normal',slot:'09',running:false,finished:false,blocked:false,suddenPerson:false,fault:'',stage:0,legDistance:0,pauseLeft:0,slowLeft:0,elapsed:0,lastFrame:0,bought:[],position:[...STORE.entrance],history:[[...STORE.entrance]],logs:[],detected:new Set(),plan:null,normalPlan:null};
 let scene3d;
 function svg(tag,attrs={},parent){const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);parent?.appendChild(e);return e;}
 function clear(e){e.replaceChildren();}
 function pathData(points){return points.map((p,i)=>`${i?'L':'M'}${p[0]*10},${(STORE.height-p[1])*10}`).join(' ');}
-function log(message){state.logs.unshift({time:state.elapsed,message});state.logs=state.logs.slice(0,8);$('eventLog').innerHTML=state.logs.map(x=>`<li><span class="event-time">${String(Math.floor(x.time/60)).padStart(2,'0')}:${String(Math.floor(x.time%60)).padStart(2,'0')}</span><span>${x.message}</span></li>`).join('');}
+function log(message){state.logs.unshift({time:state.elapsed,message});state.logs=state.logs.slice(0,8);$('eventLog').innerHTML=state.logs.map(x=>`<li><span class="event-time">${String(Math.floor(x.time/60)).padStart(2,'0')}:${String(Math.floor(x.time%60)).padStart(2,'0')}</span><span>${escapeHtml(x.message)}</span></li>`).join('');}
 function status(title,detail,motion){$('currentAction').textContent=title;$('currentDetail').textContent=detail;$('motionStatus').textContent=`状态：${motion}`;}
 function cartLines(){return [...state.cart].filter(([,q])=>q>0).map(([id,qty])=>({product:productById.get(id),qty}));}
 function cartWeight(){return cartLines().reduce((n,x)=>n+x.product.weight*x.qty,0);}
 function cartPrice(){return cartLines().reduce((n,x)=>n+x.product.price*x.qty,0);}
 function orderWeight(){return state.order?.lines.reduce((n,x)=>n+x.product.weight*x.qty,0)??0;}
-function pickupProfile(p){const cold=p.category==='冷冻食品'||p.subcategory==='海鲜'||p.subcategory==='肉类'||p.subcategory==='冷藏乳品';const assist=cold||p.name==='饮料箱';return {cold,assist,label:assist?`员工协助${cold?' · 保持冷链':''}`:'演示自动取货'};}
+function pickupProfile(p){const cold=['frozen','dairy eggs','meat seafood'].includes(p.department)||p.category==='冷冻食品'||p.subcategory==='海鲜'||p.subcategory==='肉类'||p.subcategory==='冷藏乳品';const assist=cold||p.name==='饮料箱';return {cold,assist,label:assist?`员工协助${cold?' · 保持冷链':''}`:'演示自动取货'};}
 function changeQty(id,delta){
  const next=Math.max(0,Math.min(productById.get(id).stock,(state.cart.get(id)||0)+delta));
  if(next)state.cart.set(id,next);else state.cart.delete(id);
  renderCart();renderRecommendations();renderOrderState();
  if(state.order)$('orderMessage').textContent='当前购物车是下一张订单草稿；已付款订单与机器人任务不变。';
 }
-function renderCatalogue(){const q=$('productSearch').value.trim().toLowerCase(),category=$('categoryFilter').value,sub=$('subcategoryFilter').value;const found=products.filter(p=>(!category||p.category===category)&&(!sub||p.subcategory===sub)&&(!q||`${p.name}${p.category}${p.subcategory}`.toLowerCase().includes(q)));$('catalogue').innerHTML=found.map(p=>`<article class="product-card"><div><b>${p.name}</b><small>${p.category} → ${p.subcategory}<br>货架 ${p.shelfId} · 取货 (${p.point.join(', ')}) · 库存 ${p.stock}/${p.capacity}${p.stock/p.capacity<.1?" · 已自动预警":""}<br>${pickupProfile(p).label}（教学规则）</small></div><div class="product-buy"><span>${money(p.price)} · ${kg(p.weight)}</span><button type="button" data-add="${p.id}" ${p.stock?"":"disabled"}>${p.stock?"加入购物车":"暂时缺货"}</button></div></article>`).join('')||'<p class="empty-note">没有找到商品。</p>';}
-function renderCart(){const lines=cartLines();$('cartList').innerHTML=lines.length?lines.map(({product:p,qty})=>`<div class="cart-line"><div><b>${p.name} × ${qty}</b><small>货架 ${p.shelfId} · ${money(p.price*qty)} · ${kg(p.weight*qty)}</small></div><div><button type="button" aria-label="减少${p.name}" data-minus="${p.id}">−</button><button type="button" aria-label="增加${p.name}" data-plus="${p.id}">＋</button></div></div>`).join(''):'<p class="empty-note">购物车为空。可先点「装入课堂示例订单」。</p>';$('cartSummary').textContent=`共 ${lines.reduce((n,x)=>n+x.qty,0)} 件 · ${money(cartPrice())} · ${kg(cartWeight())}`;$('submitOrderBtn').disabled=!lines.length;}
+function renderCatalogue(){const found=catalogResults;$('catalogue').innerHTML=found.map(p=>{const labels=propertyLabels(p);return `<article class="product-card"><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.category)} → ${escapeHtml(p.subcategory)} · Instacart 商品 ID ${p.sourceId}<br>教学货架 ${p.shelfId} · 取货 (${p.point.join(', ')}) · 模拟库存 ${p.stock}/${p.capacity}<br>估算价格 $${p.priceUsd?.toFixed(2)??'—'}（${labels.price}）；估算重量 ${p.weightG?.toFixed(0)??'—'}g（${labels.weight}）<br>热量 ${p.calories100g==null?'不适用':`${p.calories100g.toFixed(0)} kcal/100g（${labels.calorie}）`}</small></div><div class="product-buy"><span>${money(p.price)}（教学汇率换算） · ${kg(p.weight)}</span><button type="button" data-add="${p.id}" ${p.stock?'':'disabled'}>${p.stock?'加入购物车':'暂时缺货'}</button></div></article>`;}).join('')||'<p class="empty-note">未找到匹配商品。请试英文商品名或调整分类。</p>';}
+function renderCart(){const lines=cartLines();$('cartList').innerHTML=lines.length?lines.map(({product:p,qty})=>`<div class="cart-line"><div><b>${escapeHtml(p.name)} × ${qty}</b><small>货架 ${p.shelfId} · ${money(p.price*qty)} · ${kg(p.weight*qty)} · ${p.sourceId?'价格／重量估算，货架教学映射':'教学压力测试商品'}</small></div><div><button type="button" aria-label="减少${escapeHtml(p.name)}" data-minus="${p.id}">−</button><button type="button" aria-label="增加${escapeHtml(p.name)}" data-plus="${p.id}">＋</button></div></div>`).join(''):'<p class="empty-note">购物车为空。可先点「装入真实商品示例订单」。</p>';$('cartSummary').textContent=`共 ${lines.reduce((n,x)=>n+x.qty,0)} 件 · ${money(cartPrice())} · ${kg(cartWeight())}`;$('submitOrderBtn').disabled=!lines.length;}
 const originalRenderCart=renderCart;
 renderCart=function(){originalRenderCart();const lines=cartLines(),shortage=lines.some(x=>x.qty>x.product.stock);$('submitOrderBtn').disabled=!lines.length||cartPrice()<MIN_ORDER||shortage;$('minimumNotice').textContent=shortage?'商品库存不足，系统已提前通知员工。请减量或等待补货。':cartPrice()<MIN_ORDER?`还差 ${money(MIN_ORDER-cartPrice())} 达到机器人起购金额 ${money(MIN_ORDER)}。`:`已达到 ${money(MIN_ORDER)} 起购金额。`;};
-function renderInventory(){const alerts=products.filter(p=>p.stock/p.capacity<.1);$('inventoryAlerts').innerHTML=alerts.length?alerts.map(p=>`<div class="inventory-alert"><span><b>${p.name}</b> · ${p.stock}/${p.capacity} 件 · ${p.stock?'低库存已通知':'缺货已提前通知'}</span><button type="button" data-restock="${p.id}">员工确认补货</button></div>`).join(''):'<p>当前没有低于 10% 的商品。</p>';renderCatalogue();renderCart();}
+function renderInventory(){const alerts=[...productById.values()].filter(p=>p.stock/p.capacity<.1);$('inventoryAlerts').innerHTML=alerts.length?alerts.map(p=>`<div class="inventory-alert"><span><b>${escapeHtml(p.name)}</b> · ${p.stock}/${p.capacity} 件 · ${p.stock?'低库存已通知':'缺货已提前通知'} · ${p.sourceId?'真实商品的模拟库存':'教学压力测试商品'}</span><button type="button" data-restock="${p.id}">员工确认补货</button></div>`).join(''):'<p>当前没有低于 10% 的商品。</p>';renderCatalogue();renderCart();}
 function restock(id){const p=productById.get(id);if(!p)return;p.stock=p.capacity;log(`员工已确认 ${p.name} 补货至 ${p.capacity} 件（教学模拟）。`);renderInventory();}
-// 教学样本的二项频繁集计数：只挖掘商品对，未实现完整 FP-Tree，也没有真实交易数据。
-function calculateRules(){const total=basketSamples.length, single=new Map(),pair=new Map();for(const basket of basketSamples){const ids=[...new Set(basket)].sort();ids.forEach(id=>single.set(id,(single.get(id)||0)+1));for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){const k=`${ids[i]}|${ids[j]}`;pair.set(k,(pair.get(k)||0)+1);}}const rules=[];for(const [k,both] of pair){if(both<2)continue;const [a,b]=k.split('|');for(const [from,to] of [[a,b],[b,a]])rules.push({from,to,both,support:both/total,confidence:both/single.get(from),lift:(both/single.get(from))/(single.get(to)/total)});}return rules.sort((a,b)=>b.lift-a.lift||b.confidence-a.confidence);}
-const rules=calculateRules();
-function ruleMetrics(r){return `支持度 ${(r.support*100).toFixed(1)}% · 置信度 ${(r.confidence*100).toFixed(1)}% · 提升度 ${r.lift.toFixed(2)}`;}
-function renderRules(){$('miningMethod').textContent=`使用 ${basketSamples.length} 篮教学样本，现场统计二项共购频率并计算支持度、置信度和提升度；这是 FP-Growth 思路的二项频繁集简化演示，未建立完整 FP-Tree，也未训练真实模型。`;$('ruleTable').innerHTML=rules.slice(0,5).map(r=>`<div class="rule-row"><b>${productById.get(r.from).name} → ${productById.get(r.to).name}</b><small>${ruleMetrics(r)}</small></div>`).join('');const seenPairs=new Set();const suggestions=rules.filter(r=>{const pair=[r.from,r.to].sort().join('|');if(r.lift<=1||seenPairs.has(pair))return false;seenPairs.add(pair);return true;}).slice(0,5).map(r=>{const a=productById.get(r.from),b=productById.get(r.to);const cold=['乳制品','冷冻食品','生鲜'].includes(a.category)||['乳制品','冷冻食品','生鲜'].includes(b.category),chemical=['日用品','清洁用品','个人护理'].includes(a.category)||['日用品','清洁用品','个人护理'].includes(b.category);return `<li>${a.name} 与 ${b.name}：可考虑同区域邻近陈列；${cold?'保持相应冷链；':''}${chemical?'食品与日化分隔；':''}不缩窄通道。</li>`;});$('shelfSuggestions').innerHTML=`<p class="assumption">陈列前须保持冷链，隔开食品与日化，并留足通道宽度。</p><ul>${suggestions.join('')}</ul><p class="assumption">仅为布局建议，下单不会移动货架。</p>`;}
-function renderRecommendations(){const ids=new Set(cartLines().map(x=>x.product.id));const found=rules.filter(r=>ids.has(r.from)&&!ids.has(r.to)).slice(0,3);$('recommendations').innerHTML=found.length?found.map(r=>`<div class="recommend-item"><div><b>${productById.get(r.to).name}</b><small>${productById.get(r.from).name} 购买样本中共购；${ruleMetrics(r)}</small></div><button type="button" data-add="${r.to}">加入</button></div>`).join(''):'<p class="empty-note">把商品加入购物车后，这里会显示教学样本计算的相关商品。</p>';}
+let rules=[];
+function ruleMetrics(r){return `支持度 ${(r.support*100).toFixed(3)}% · 置信度 ${(r.confidence*100).toFixed(1)}% · 提升度 ${r.lift.toFixed(2)}`;}
+function renderRules(){if(!research)return;$('miningMethod').textContent=`真实 train 购物篮 ${research.rules.baskets.toLocaleString()} 篮，Apriori 二项频繁集：${research.rules.ruleCount.toLocaleString()} 条规则；候选商品 ${research.rules.candidateProducts} 件，最小共购 ${research.rules.minSupportCount} 篮。关联不代表因果。`;$('ruleTable').innerHTML=rules.filter(r=>r.confidence>=.15).slice(0,5).map(r=>`<div class="rule-row"><b>${escapeHtml(productById.get(r.from)?.name)} → ${escapeHtml(productById.get(r.to)?.name)}</b><small>${ruleMetrics(r)}</small></div>`).join('');const seenPairs=new Set();const suggestions=rules.filter(r=>{const pair=[r.from,r.to].sort().join('|');if(r.lift<=1||r.confidence<.15||seenPairs.has(pair))return false;seenPairs.add(pair);return true;}).slice(0,5).map(r=>{const a=productById.get(r.from),b=productById.get(r.to);return `<li>${escapeHtml(a.name)} 与 ${escapeHtml(b.name)}：可考虑邻近陈列，须另外核对冷链、食品与日化分隔及通道宽度。</li>`;});$('shelfSuggestions').innerHTML=`<p class="assumption">真实共购计算，布局建议仍需人工审查。</p><ul>${suggestions.join('')}</ul>`;}
+function renderRecommendations(){const ids=new Set(cartLines().map(x=>x.product.id));const found=rules.filter(r=>ids.has(r.from)&&!ids.has(r.to)&&r.confidence>=.1).slice(0,3);$('recommendations').innerHTML=found.length?found.map(r=>`<div class="recommend-item"><div><b>${escapeHtml(productById.get(r.to).name)}</b><small>${escapeHtml(productById.get(r.from).name)} 的真实 train 共购；${ruleMetrics(r)}</small></div><button type="button" data-add="${r.to}">加入</button></div>`).join(''):'<p class="empty-note">将高频商品加入购物车后，可查看真实 train 购物篮计算的关联推荐；低频商品可能没有规则。</p>';}
 function renderCrowd(){const sample=crowdSamples[state.slot],sum=sample.reduce((a,b)=>a+b,0);$('crowdSummary').textContent=`${timeSlots.find(x=>x.id===state.slot).label}：18 个货架附近共 ${sum} 人（教学样本）；0–2 人较低，3–4 人中等，5 人及以上较拥挤。`;$('crowdTable').innerHTML=shelves.map((s,i)=>`<div class="crowd-cell ${sample[i]>=5?'hot':sample[i]>=3?'warm':'cool'}"><b>${s.category}</b><small>${s.id} · ${sample[i]} 人</small></div>`).join('');scene3d?.setScenario(state.scenario,state.slot);}
 function renderQueue(){
  const active=state.order;
@@ -45,7 +45,7 @@ function renderQueue(){
 }
 function renderStockout(){
  const select=$('stockoutSelect'),old=state.stockoutId;
- select.innerHTML='<option value="">不模拟缺货</option>'+(state.order?.lines||[]).map(x=>`<option value="${x.product.id}">${x.product.name} · 货架 ${x.product.shelfId}</option>`).join('');
+ select.innerHTML='<option value="">不模拟缺货</option>'+(state.order?.lines||[]).map(x=>`<option value="${x.product.id}">${escapeHtml(x.product.name)} · 货架 ${x.product.shelfId}</option>`).join('');
  select.value=old&&state.order?.lines.some(x=>x.product.id===old)?old:'';
  select.disabled=!state.order||state.running||state.stage>0||state.awaitingPickup||!!state.shortage;
  $('stockoutPanel').hidden=!state.shortage;
@@ -67,7 +67,7 @@ function renderOrderState(){
  $('shoppingList').innerHTML=state.order?state.order.lines.map(x=>{
   const resolution=state.resolutions.get(x.product.id),actual=resolution?.kind==='accept'?resolution.replacement:x.product;
   const bought=state.bought.some(b=>b.product.id===actual.id),skipped=resolution?.kind==='skip';
-  return `<li class="${bought?'is-bought':''}"><span class="item-check">${bought?'✓':skipped?'—':''}</span><span class="item-name">${x.product.name} × ${x.qty}<small> · ${skipped?'缺货跳过':resolution?.kind==='accept'?`替代为 ${actual.name}`:`货架 ${x.product.shelfId}`}</small></span><span class="item-meta">${skipped?'未购买':kg(actual.weight*x.qty)}</span></li>`;
+  return `<li class="${bought?'is-bought':''}"><span class="item-check">${bought?'✓':skipped?'—':''}</span><span class="item-name">${escapeHtml(x.product.name)} × ${x.qty}<small> · ${skipped?'缺货跳过':resolution?.kind==='accept'?`替代为 ${escapeHtml(actual.name)}`:`货架 ${x.product.shelfId}`}</small></span><span class="item-meta">${skipped?'未购买':kg(actual.weight*x.qty)}</span></li>`;
  }).join(''):'<li>请先在上方选择商品并完成教学模拟付款。</li>';
  const loaded=state.bought.reduce((n,x)=>n+x.product.weight*x.qty,0);
  $('loadText').textContent=`${kg(loaded)} / ${kg(CAPACITY)}`;
@@ -76,13 +76,14 @@ function renderOrderState(){
  $('overloadBtn').setAttribute('aria-pressed',state.cart.has(products.find(p=>p.name==='饮料箱').id));
  renderQueue();renderStockout();
 }
-function populateFilters(){const categories=[...new Set(products.map(p=>p.category))];$('categoryFilter').innerHTML='<option value="">全部大类</option>'+categories.map(x=>`<option>${x}</option>`).join('');$('timeSlot').innerHTML=timeSlots.map(x=>`<option value="${x.id}">${x.label}</option>`).join('');updateSubcategories();}
-function updateSubcategories(){const cat=$('categoryFilter').value;const subs=[...new Set(products.filter(p=>!cat||p.category===cat).map(p=>p.subcategory))];$('subcategoryFilter').innerHTML='<option value="">全部细分类</option>'+subs.map(x=>`<option>${x}</option>`).join('');renderCatalogue();}
+function populateFilters(){if(research){$('categoryFilter').innerHTML='<option value="">全部部门</option>'+research.index.departments.map(x=>`<option value="${x.id}">${escapeHtml(x.name)} (${x.count})</option>`).join('');updateSubcategories();}$('timeSlot').innerHTML=timeSlots.map(x=>`<option value="${x.id}">${x.label}</option>`).join('');}
+function updateSubcategories(){if(!research)return;const dept=$('categoryFilter').value,aisles=research.index.aisles.filter(x=>!dept||x.departmentId===Number(dept));$('subcategoryFilter').innerHTML='<option value="">全部 aisle</option>'+aisles.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');scheduleCatalogSearch();}
+function scheduleCatalogSearch(){if(!research)return;clearTimeout(catalogTimer);const request=++catalogRequest;$('catalogue').innerHTML='<p class="empty-note">正在搜索真实商品数据…</p>';catalogTimer=setTimeout(async()=>{try{const query=$('productSearch').value,dept=$('categoryFilter').value,aisle=$('subcategoryFilter').value;const rows=!query&&!dept&&!aisle?research.top.slice(0,36):await searchCatalog(research.index,query,dept,aisle);if(request!==catalogRequest)return;catalogResults=rows.map(row=>{const id=`I${row.id}`;if(!productById.has(id))productById.set(id,convertProduct(row));return productById.get(id);});renderCatalogue();}catch(error){if(request===catalogRequest)$('catalogue').textContent=`商品数据载入失败：${error.message}`;}},250);}
 function graph(){const nodes=new Map();function edge(a,b){for(const p of [a,b])if(!nodes.has(key(p)))nodes.set(key(p),{point:p,neighbors:[]});nodes.get(key(a)).neighbors.push(key(b));nodes.get(key(b)).neighbors.push(key(a));}const bottom=[5,...STORE.aisleXs,130,138];for(let i=1;i<bottom.length;i++)edge([bottom[i-1],8],[bottom[i],8]);for(const y of STORE.crossYs.slice(1))for(let i=1;i<STORE.aisleXs.length;i++)edge([STORE.aisleXs[i-1],y],[STORE.aisleXs[i],y]);for(const x of STORE.aisleXs)for(let i=1;i<STORE.verticalYs.length;i++)edge([x,STORE.verticalYs[i-1]],[x,STORE.verticalYs[i]]);return nodes;}
 const nodes=graph();
-function edgeCost(a,b,scenario,slot,mode='full'){const length=dist(a,b),center=[(a[0]+b[0])/2,(a[1]+b[1])/2];const nearby=shelves.filter(s=>dist(s.point,center)<20).map(s=>shelfCrowd(slot,s.id));const crowd=nearby.length?nearby.reduce((n,x)=>n+x,0)/nearby.length:0;const hot=scenario==='peak'&&a[1]===56&&b[1]===56&&Math.min(a[0],b[0])>=40&&Math.max(a[0],b[0])<=80;const predictedTime=length*(1+.025*crowd+(hot?2.6:0));const risk=length*(.025*crowd+(hot?2.8:0));const cost=mode==='distance'?length:mode==='time'?length+.45*predictedTime:length+.45*predictedTime+1.3*risk;return {length,predictedTime,risk,cost};}
+function edgeCost(a,b,scenario,slot,mode='full'){const length=dist(a,b),center=[(a[0]+b[0])/2,(a[1]+b[1])/2];const nearby=shelves.filter(s=>dist(s.point,center)<20).map(s=>shelfCrowd(slot,s.id));const crowd=nearby.length?nearby.reduce((n,x)=>n+x,0)/nearby.length:0;const hot=scenario==='peak'&&a[1]===34&&b[1]===34&&Math.min(a[0],b[0])>=40&&Math.max(a[0],b[0])<=80;const predictedTime=length*(1+.025*crowd+(hot?2.6:0));const risk=length*(.025*crowd+(hot?2.8:0));const cost=mode==='distance'?length:mode==='time'?length+.45*predictedTime:length+.45*predictedTime+1.3*risk;return {length,predictedTime,risk,cost};}
 function astar(start,finish,scenario,slot,mode='full'){const open=new Set([key(start)]),came=new Map(),g=new Map([[key(start),0]]),f=new Map([[key(start),dist(start,finish)]]);while(open.size){let current=[...open].reduce((a,b)=>(f.get(a)??Infinity)<=(f.get(b)??Infinity)?a:b);if(current===key(finish)){const points=[nodes.get(current).point];while(came.has(current)){current=came.get(current);points.unshift(nodes.get(current).point);}return points;}open.delete(current);for(const n of nodes.get(current).neighbors){const score=g.get(current)+edgeCost(nodes.get(current).point,nodes.get(n).point,scenario,slot,mode).cost;if(score<(g.get(n)??Infinity)){came.set(n,current);g.set(n,score);f.set(n,score+dist(nodes.get(n).point,finish));open.add(n);}}}return null;}
-function avoidPeople(points,scenario,slot){const obstacles=peopleForScenario(scenario,slot).map(x=>x.point);obstacles.push(scenario==='peak'?[74,58.5]:[106,81]);const out=[points[0]];for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],length=dist(a,b),horizontal=a[1]===b[1],direction=Math.sign(horizontal?b[0]-a[0]:b[1]-a[1]);const near=obstacles.map(p=>({along:(horizontal?p[0]-a[0]:p[1]-a[1])*direction,side:horizontal?p[1]-a[1]:p[0]-a[0]})).filter(p=>p.along>3.2&&p.along<length-3.2&&Math.abs(p.side)<2.2).sort((x,y)=>x.along-y.along);let last=0;for(const p of near){if(p.along-3<last)continue;const side=p.side>=0?-2:2;const pt=(d,s)=>horizontal?[a[0]+direction*d,a[1]+s]:[a[0]+s,a[1]+direction*d];out.push(pt(p.along-3,0),pt(p.along-1.5,side),pt(p.along+1.5,side),pt(p.along+3,0));last=p.along+3;}out.push(b);}return out;}
+function avoidPeople(points,scenario,slot){const obstacles=peopleForScenario(scenario,slot).map(x=>x.point);obstacles.push(scenario==='peak'?[74,36.5]:[106,81]);const out=[points[0]];for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],length=dist(a,b),horizontal=a[1]===b[1],direction=Math.sign(horizontal?b[0]-a[0]:b[1]-a[1]);const near=obstacles.map(p=>({along:(horizontal?p[0]-a[0]:p[1]-a[1])*direction,side:horizontal?p[1]-a[1]:p[0]-a[0]})).filter(p=>p.along>3.2&&p.along<length-3.2&&Math.abs(p.side)<2.2).sort((x,y)=>x.along-y.along);let last=0;for(const p of near){if(p.along-3<last)continue;const side=p.side>=0?-2:2;const pt=(d,s)=>horizontal?[a[0]+direction*d,a[1]+s]:[a[0]+s,a[1]+direction*d];out.push(pt(p.along-3,0),pt(p.along-1.5,side),pt(p.along+1.5,side),pt(p.along+3,0));last=p.along+3;}out.push(b);}return out;}
 function planLeg(a,b,scenario,slot,mode='full'){const base=astar(a,b,scenario,slot,mode);if(!base)return null;const points=avoidPeople(base,scenario,slot),lengths=points.slice(1).map((p,i)=>dist(points[i],p));let cost=0,time=0,risk=0;for(let i=1;i<base.length;i++){const c=edgeCost(base[i-1],base[i],scenario,slot,mode);cost+=c.cost;time+=c.predictedTime;risk+=c.risk;}return {points,lengths,length:lengths.reduce((a,b)=>a+b,0),cost,time,risk};}
 function uniqueStops(lines){const map=new Map();for(const line of lines){const s=map.get(line.product.shelfId)||{shelfId:line.product.shelfId,point:line.product.point,lines:[]};s.lines.push(line);map.set(s.shelfId,s);}return [...map.values()];}
 function buildPlan(lines,scenario,slot,mode='full'){
@@ -93,31 +94,37 @@ function buildPlan(lines,scenario,slot,mode='full'){
  const start=stops.map(s=>leg(STORE.entrance,s.point));
  const checkout=stops.map(s=>leg(s.point,STORE.checkout));
  const between=stops.map((a,i)=>stops.map((b,j)=>i===j?null:leg(a.point,b.point)));
- // Held-Karp 动态规划：枚举已访问货架集合，选出入口到结账处的最低总代价顺序。
- const states=1<<n,all=states-1,costs=new Float64Array(states*n),previous=new Int8Array(states*n);
- costs.fill(Infinity);previous.fill(-1);
- for(let j=0;j<n;j++)if(start[j])costs[(1<<j)*n+j]=start[j].cost;
- for(let mask=1;mask<states;mask++)for(let bits=mask;bits;bits&=bits-1){
-  const j=31-Math.clz32(bits&-bits),current=costs[mask*n+j];
-  if(!Number.isFinite(current))continue;
-  for(let remaining=all^mask;remaining;remaining&=remaining-1){
-   const k=31-Math.clz32(remaining&-remaining),step=between[j][k];
-   if(!step)continue;
-   const index=((mask|(1<<k))*n+k),next=current+step.cost;
-   if(next<costs[index]){costs[index]=next;previous[index]=j;}
+ const order=[];let bestCost=Infinity,method='Held-Karp 精确访问顺序';
+ if(n>12){
+  // 13–18 个货架时避免在浏览器运行指数级动态规划；如实标明启发式结果。
+  method='最近安全代价启发式访问顺序（不保证全局最优）';
+  const remaining=new Set(stops.map((_,i)=>i));let previousStop=-1;
+  while(remaining.size){let choice=-1,score=Infinity;for(const j of remaining){const candidate=previousStop<0?start[j]:between[previousStop][j];if(candidate&&candidate.cost<score){score=candidate.cost;choice=j;}}if(choice<0)return null;order.push(choice);remaining.delete(choice);previousStop=choice;}
+  bestCost=start[order[0]].cost+order.slice(1).reduce((sum,j,i)=>sum+between[order[i]][j].cost,0)+checkout[order.at(-1)].cost+finish.cost;
+ }else{
+  // Held-Karp：枚举已访问货架集合，选入口到结账的最低代价顺序。
+  const states=1<<n,all=states-1,costs=new Float64Array(states*n),previous=new Int8Array(states*n);
+  costs.fill(Infinity);previous.fill(-1);
+  for(let j=0;j<n;j++)if(start[j])costs[(1<<j)*n+j]=start[j].cost;
+  for(let mask=1;mask<states;mask++)for(let bits=mask;bits;bits&=bits-1){
+   const j=31-Math.clz32(bits&-bits),current=costs[mask*n+j];
+   if(!Number.isFinite(current))continue;
+   for(let remaining=all^mask;remaining;remaining&=remaining-1){
+    const k=31-Math.clz32(remaining&-remaining),step=between[j][k];
+    if(!step)continue;
+    const index=((mask|(1<<k))*n+k),next=current+step.cost;
+    if(next<costs[index]){costs[index]=next;previous[index]=j;}
+   }
   }
+  let last=-1;
+  for(let j=0;j<n;j++)if(checkout[j]){const total=costs[all*n+j]+checkout[j].cost+finish.cost;if(total<bestCost){bestCost=total;last=j;}}
+  if(last<0)return null;
+  let mask=all;
+  while(last>=0){order.unshift(last);const parent=previous[mask*n+last];mask^=1<<last;last=parent;}
  }
- let last=-1,bestCost=Infinity;
- for(let j=0;j<n;j++)if(checkout[j]){
-  const total=costs[all*n+j]+checkout[j].cost+finish.cost;
-  if(total<bestCost){bestCost=total;last=j;}
- }
- if(last<0)return null;
- const order=[];let mask=all;
- while(last>=0){order.unshift(last);const parent=previous[mask*n+last];mask^=1<<last;last=parent;}
  const orderedStops=order.map(i=>stops[i]);
  const legs=[start[order[0]],...order.slice(1).map((j,i)=>between[order[i]][j]),checkout[order.at(-1)],finish];
- const best={stops:orderedStops,legs,cost:bestCost};
+ const best={stops:orderedStops,legs,cost:bestCost,method};
  best.points=legs.flatMap((l,i)=>i?l.points.slice(1):l.points);
  best.length=legs.reduce((sum,l)=>sum+l.length,0);
  best.time=legs.reduce((sum,l)=>sum+l.time,0)+n*3+5;
@@ -159,7 +166,7 @@ function scoreExistingRoute(plan,scenario,slot){
 function renderComparison(){
  if(!state.order){$('comparisonBody').innerHTML='<tr><td colspan="3">付款后按当前订单计算</td></tr>';$('comparisonInsight').textContent='原路线与新路线均使用同一订单和时段；请先提交订单。';$('routeReason').textContent='付款后显示按订单计算的货架访问顺序和路径代价。';return;}
  const a=scoreExistingRoute(state.normalPlan,state.scenario,state.slot),b=state.plan,changed=a.points.map(key).join('|')!==b.points.map(key).join('|');
- $('routeReason').textContent=`访问顺序：入口 → ${b.stops.map(s=>`货架 ${s.shelfId}`).join(' → ')} → 结账 → 出口。比较全部 ${b.stops.length} 个取货货架的访问顺序，逐段用 A* 选路；当前综合代价 ${b.cost.toFixed(1)}（教学演示假设）。`;
+ $('routeReason').textContent=`访问顺序：入口 → ${b.stops.map(s=>`货架 ${s.shelfId}`).join(' → ')} → 结账 → 出口。${b.method}；逐段 A* 选路；当前综合代价 ${b.cost.toFixed(1)}（教学演示假设）。`;
  const rows=[['路线长度',`${a.length.toFixed(1)} 地图单位`,`${b.length.toFixed(1)} 地图单位`],['预计通行与取货时间',`${a.time.toFixed(1)} 演示秒`,`${b.time.toFixed(1)} 演示秒`],['安全风险值',a.risk.toFixed(1),b.risk.toFixed(1)],['综合路径代价',a.cost.toFixed(1),b.cost.toFixed(1)],['改道次数','0 次',changed?'1 次':'0 次']];
  $('comparisonBody').innerHTML=rows.map(row=>`<tr>${row.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('');
  $('comparisonInsight').textContent=`同一订单、${timeSlots.find(x=>x.id===state.slot).label} 教学样本，原路线也按当前客流重新评估：新路线比原路线${b.length>=a.length?'长':'短'} ${Math.abs(b.length-a.length).toFixed(1)} 地图单位，风险值${b.risk<=a.risk?'降低':'增加'} ${Math.abs(b.risk-a.risk).toFixed(1)}。${changed?'因当前人流风险重新规划。':'当前场景无需改道。'}代价 = 距离 + 0.45 × 预计时间 + 1.3 × 安全风险；数字均为教学演示假设，动画已加速。`;
@@ -175,12 +182,11 @@ function runBenchmark(){
  $('benchmarkResult').innerHTML=`<table><thead><tr><th>规划输入</th><th>长度</th><th>演示秒</th><th>风险值</th></tr></thead><tbody>${body}</tbody></table><p>以上三条候选路线均按当前同一场景评分；在 ${checked} 个固定教学场景中，完整成本的风险值低于仅距离基线 ${safer} 次。数字为教学样本计算，未进行随机重复实验。</p>`;
 }
 function renderDataAudit(){
- const ids=new Set(products.map(p=>p.id)),bad=products.filter(p=>p.stock<0||p.stock>p.capacity||!shelves.some(s=>s.id===p.shelfId&&key(s.point)===key(p.point))).length;
  const counts=crowdSamples[state.slot],base=crowdSamples['09'],changed=counts.filter((n,i)=>Math.abs(n-base[i])>=3).length;
- $('dataAudit').textContent=`教学数据版本：网页内置样本；${products.length} 种商品、${basketSamples.length} 篮购物记录、${timeSlots.length} 个时段 × ${shelves.length} 个货架。商品 ID 重复 ${products.length-ids.size} 项；库存或取货坐标异常 ${bad} 项。`;
+ $('dataAudit').textContent=research?`已提供清洗数据：${research.summary.products.toLocaleString()} 件商品、${research.summary.orders.toLocaleString()} 张订单、${research.summary.basketOrders.toLocaleString()} 张 train 购物篮。数据清洗前删除量无法从清洗文件反推；详情见上方数据质量工作台。`:'正在读取真实数据统计。';
  $('driftAudit').textContent=`当前 ${timeSlots.find(x=>x.id===state.slot).label} 与 09:00 基线相比，${changed}/${shelves.length} 个货架人数变化至少 3 人（教学预警阈值）。这提示重新采样，不代表真实模型发生漂移。`;
 }
-function renderPickupFeasibility(){const lines=state.order?.lines||['苹果','鲜虾','冷冻水饺','饮料箱'].map(name=>({product:products.find(p=>p.name===name),qty:1}));$('pickupFeasibility').innerHTML=`<ul>${lines.map(({product:p})=>`<li>${p.name}：${pickupProfile(p).label}</li>`).join('')}</ul>`;}
+function renderPickupFeasibility(){const lines=state.order?.lines||['苹果','鲜虾','冷冻水饺','饮料箱'].map(name=>({product:products.find(p=>p.name===name),qty:1}));$('pickupFeasibility').innerHTML=`<ul>${lines.map(({product:p})=>`<li>${escapeHtml(p.name)}：${pickupProfile(p).label}</li>`).join('')}</ul>`;}
 const faultAdvice={sensor:'传感器数据不可用：停车，员工检查传感器后恢复。',localization:'定位丢失：停车，重新定位并确认货架地图后恢复。',network:'订单网络中断：停车，核对本地订单与服务端状态后恢复。',battery:'电量不足：停车，由员工处理充电或接管订单。',wrongItem:'商品核对不一致：停车，员工复核名称与条码后恢复。'};
 function renderFaultState(){$('faultState').textContent=state.fault?faultAdvice[state.fault]:'当前无故障。';$('suddenPersonBtn').setAttribute('aria-pressed',state.suddenPerson);$('suddenPersonBtn').textContent=state.suddenPerson?'行人已离开，解除安全停车':'模拟行人突然靠近';}
 function setFault(active){state.fault=active?$('faultSelect').value:'';state.running=false;state.lastFrame=0;renderFaultState();if(active){status('故障安全停车',faultAdvice[state.fault],'等待人工排查');log(`故障演练：${faultAdvice[state.fault]}`);}else{status('故障已排查','请点击播放，从当前位置继续当前订单。','待机');log('员工已完成故障排查；机器人等待继续指令。');}renderScene();}
@@ -277,7 +283,7 @@ function cancelActive(){
  if(!state.order||state.running||state.stage>0||state.elapsed>0||state.awaitingPickup)return;
  const id=state.order.id;state.completed.push({id,status:'已取消'});state.order=null;activateNext();log(`${id} 已取消；机器人读取下一张排队订单。`);
 }
-function animate(now){if(!state.running)return;if(!state.lastFrame)state.lastFrame=now;const delta=Math.min((now-state.lastFrame)/1000,.08);state.lastFrame=now;state.elapsed+=delta;if(state.blocked){status('安全停车等待','所有通道封闭，机器人保持当前位置，不穿过人群。','等待通道开放');requestAnimationFrame(animate);return;}if(state.pauseLeft>0){state.pauseLeft=Math.max(0,state.pauseLeft-delta);requestAnimationFrame(animate);return;}const leg=state.plan?.legs[state.stage];if(!leg)return;const person=peopleForScenario(state.scenario,state.slot).find(p=>!state.detected.has(p.id)&&dist(state.position,p.point)<5.5);if(person){state.detected.add(person.id);state.slowLeft=1;log(`教学模拟分类：识别到${person.zone}行人；减速、保持间距并绕行。`);status('识别行人，减速避让',`靠近${person.zone}的顾客，低速从通道侧边通过。`,'低速避让');}const cart=state.scenario==='peak'?[74,58.5]:[106,81];if(!state.detected.has('cart')&&dist(state.position,cart)<5.5){state.detected.add('cart');state.slowLeft=1;log('教学模拟分类：识别到购物车，减速并避让；固定货架在地图中设为不可通行。');}const slow=state.slowLeft>0;state.slowLeft=Math.max(0,state.slowLeft-delta);state.legDistance=Math.min(leg.length,state.legDistance+delta*(state.scenario==='peak'?22:26)*(slow?.45:1));state.position=positionOnLeg(leg,state.legDistance);if(dist(state.history.at(-1),state.position)>.15)state.history.push([...state.position]);drawHistory();drawRobot();renderProgress();if(state.legDistance>=leg.length-.001){state.legDistance=0;arrive();}if(state.running)requestAnimationFrame(animate);}
+function animate(now){if(!state.running)return;if(!state.lastFrame)state.lastFrame=now;const delta=Math.min((now-state.lastFrame)/1000,.08);state.lastFrame=now;state.elapsed+=delta;if(state.blocked){status('安全停车等待','所有通道封闭，机器人保持当前位置，不穿过人群。','等待通道开放');requestAnimationFrame(animate);return;}if(state.pauseLeft>0){state.pauseLeft=Math.max(0,state.pauseLeft-delta);requestAnimationFrame(animate);return;}const leg=state.plan?.legs[state.stage];if(!leg)return;const person=peopleForScenario(state.scenario,state.slot).find(p=>!state.detected.has(p.id)&&dist(state.position,p.point)<5.5);if(person){state.detected.add(person.id);state.slowLeft=1;log(`教学模拟分类：识别到${person.zone}行人；减速、保持间距并绕行。`);status('识别行人，减速避让',`靠近${person.zone}的顾客，低速从通道侧边通过。`,'低速避让');}const cart=state.scenario==='peak'?[74,36.5]:[106,81];if(!state.detected.has('cart')&&dist(state.position,cart)<5.5){state.detected.add('cart');state.slowLeft=1;log('教学模拟分类：识别到购物车，减速并避让；固定货架在地图中设为不可通行。');}const slow=state.slowLeft>0;state.slowLeft=Math.max(0,state.slowLeft-delta);state.legDistance=Math.min(leg.length,state.legDistance+delta*(state.scenario==='peak'?22:26)*(slow?.45:1));state.position=positionOnLeg(leg,state.legDistance);if(dist(state.history.at(-1),state.position)>.15)state.history.push([...state.position]);drawHistory();drawRobot();renderProgress();if(state.legDistance>=leg.length-.001){state.legDistance=0;arrive();}if(state.running)requestAnimationFrame(animate);}
 function playPause(){
  if(state.shortage){status('请先确认缺货替代','请在缺货面板选择「同意替代」或「不替代，跳过」。','等待顾客确认');return;}
  if(state.assistPending){status('请先完成员工协助取货','请在协助面板确认实物已核对并取货。','人工协助');return;}
@@ -287,21 +293,30 @@ function playPause(){
  if(!state.order){status('请先完成教学模拟付款','在上方选择商品、加入购物车，再点「教学模拟付款并提交订单」。','等待订单');log('未收到已付款订单，机器人不能出发。');return;}
  if(orderWeight()>CAPACITY){status('无法出发：载重超限',`订单 ${kg(orderWeight())} 超过 ${kg(CAPACITY)} 上限。`,'超载');log('载重检查失败，机器人保持在入口。');return;}
  if(state.running){state.running=false;state.lastFrame=0;$('playLabel').textContent='继续播放';$('playBtn').firstElementChild.textContent='▶';status('演示已暂停','点击继续播放，机器人会从当前位置继续。','暂停');renderProgress();renderQueue();return;}
- if(state.stage===0&&state.elapsed===0){log(`载重检查通过：${kg(orderWeight())} / ${kg(CAPACITY)}。`);log('用动态规划比较货架访问顺序，逐段 A* 规划；机器人从入口进入。');if(state.scenario==='peak')log('识别中部通道高拥堵与安全风险：重新规划，橙色原路线改为绿色安全路线。');}
+ if(state.stage===0&&state.elapsed===0){log(`载重检查通过：${kg(orderWeight())} / ${kg(CAPACITY)}。`);log(`${state.plan.method}，逐段 A* 规划；机器人从入口进入。`);if(state.scenario==='peak')log('识别中部通道高拥堵与安全风险：重新规划，橙色原路线改为绿色安全路线。');}
  state.running=true;state.lastFrame=0;$('playLabel').textContent='暂停演示';$('playBtn').firstElementChild.textContent='Ⅱ';status(`前往${nextName()}`,'沿规划通道行驶，模拟识别人、购物车和固定货架。',state.blocked?'安全停车':'行驶中');renderProgress();renderQueue();requestAnimationFrame(animate);
 }
 function toggleBlock(){state.blocked=!state.blocked;log(state.blocked?'安全测试：全部通道封闭，机器人停车等待。':'安全测试：通道重新开放，可继续沿路线行驶。');if(state.blocked)status('安全停车等待','全部通道封闭，机器人不穿过人群。','安全停车');else status('通道重新开放','恢复安全路线后继续购物。',state.running?'行驶中':'待机');renderScene();}
 function demoOrder(){
- state.cart=new Map(['苹果','纯牛奶','大米','洗衣液'].map(name=>[products.find(p=>p.name===name).id,1]));
+ if(!research){$('orderMessage').textContent='真实商品数据尚未载入，请稍后重试。';return;}
+ const selectedShelves=new Set();
+ const examples=research.top.filter(p=>{const item=productById.get(`I${p.id}`);if(!item||p.weightG<=0||p.weightG>2000||selectedShelves.has(item.shelfId))return false;selectedShelves.add(item.shelfId);return true;}).slice(0,4);
+ state.cart=new Map(examples.map(p=>[`I${p.id}`,1]));
  renderCart();renderRecommendations();renderOrderState();
  $('orderMessage').textContent='已装入 4 件课堂示例商品。点击教学模拟付款；若当前订单仍在执行，新订单会排队。';
 }
 function toggleOverload(){const id=products.find(p=>p.name==='饮料箱').id;changeQty(id,state.cart.has(id)?-state.cart.get(id):1);$('orderMessage').textContent=state.cart.has(id)?'已加入 6 kg 饮料箱。请提交这张教学模拟订单，机器人处理时会检查载重。':'测试饮料箱已移除；当前已付款订单不受影响。';}
-scene3d=createStoreScene($('scene3d'),$('storeMap'));drawBaseMap();drawFixtures();populateFilters();renderRules();renderCatalogue();renderCart();renderInventory();renderRecommendations();renderCrowd();resetPlayback();
+scene3d=createStoreScene($('scene3d'),$('storeMap'));drawBaseMap();drawFixtures();populateFilters();renderCatalogue();renderCart();renderInventory();renderRecommendations();renderCrowd();resetPlayback();
+loadResearch().then(data=>{
+ research=data;
+ for(const row of [...data.top,...Object.values(data.rules.products)]){const id=`I${row.id}`;if(!productById.has(id))productById.set(id,convertProduct(row));}
+ rules=data.rules.rules.map(rule=>({...rule,from:`I${rule.from}`,to:`I${rule.to}`}));
+ populateFilters();scheduleCatalogSearch();renderRules();renderRecommendations();renderResearchDashboard(data);renderDataAudit();
+}).catch(error=>{$('catalogue').textContent=`真实数据加载失败：${error.message}`;$('miningMethod').textContent='真实数据加载失败，请检查 public/data 文件。';});
 $('benchmarkBtn').addEventListener('click',runBenchmark);
 $('suddenPersonBtn').addEventListener('click',toggleSuddenPerson);
 $('injectFaultBtn').addEventListener('click',()=>setFault(true));
 $('clearFaultBtn').addEventListener('click',()=>setFault(false));
 $('confirmAssistBtn').addEventListener('click',confirmPickupAssist);
 $('inventoryAlerts').addEventListener('click',e=>{const id=e.target.closest('[data-restock]')?.dataset.restock;if(id)restock(id);});
-$('catalogue').addEventListener('click',e=>{const id=e.target.closest('[data-add]')?.dataset.add;if(id)changeQty(id,1);});$('recommendations').addEventListener('click',e=>{const id=e.target.closest('[data-add]')?.dataset.add;if(id)changeQty(id,1);});$('cartList').addEventListener('click',e=>{const plus=e.target.closest('[data-plus]')?.dataset.plus,minus=e.target.closest('[data-minus]')?.dataset.minus;if(plus)changeQty(plus,1);if(minus)changeQty(minus,-1);});$('productSearch').addEventListener('input',renderCatalogue);$('categoryFilter').addEventListener('change',updateSubcategories);$('subcategoryFilter').addEventListener('change',renderCatalogue);$('demoOrderBtn').addEventListener('click',demoOrder);$('submitOrderBtn').addEventListener('click',submitOrder);$('normalBtn').addEventListener('click',()=>{state.scenario='normal';updateScenario();});$('peakBtn').addEventListener('click',()=>{state.scenario='peak';updateScenario();});$('timeSlot').addEventListener('change',()=>{state.slot=$('timeSlot').value;renderCrowd();updateScenario();});$('playBtn').addEventListener('click',playPause);$('resetBtn').addEventListener('click',()=>{resetPlayback();log('已重开当前教学模拟订单，机器人回到入口。');});$('safetyTestBtn').addEventListener('click',toggleBlock);$('overloadBtn').addEventListener('click',toggleOverload);$('cameraResetBtn').addEventListener('click',()=>scene3d.resetCamera());$('stockoutSelect').addEventListener('change',()=>{state.stockoutId=$('stockoutSelect').value;log(state.stockoutId?`缺货演示已选中 ${productById.get(state.stockoutId).name}；机器人到货架时等待顾客决定。`:'缺货演示已关闭。');});$('acceptSubBtn').addEventListener('click',()=>decideSubstitution(true));$('skipSubBtn').addEventListener('click',()=>decideSubstitution(false));$('handoffBtn').addEventListener('click',confirmHandoff);$('orderQueue').addEventListener('click',e=>{const id=e.target.closest('[data-cancel]')?.dataset.cancel;if(id)cancelOrder(id);if(e.target.closest('[data-cancel-active]'))cancelActive();});
+$('catalogue').addEventListener('click',e=>{const id=e.target.closest('[data-add]')?.dataset.add;if(id)changeQty(id,1);});$('recommendations').addEventListener('click',e=>{const id=e.target.closest('[data-add]')?.dataset.add;if(id)changeQty(id,1);});$('cartList').addEventListener('click',e=>{const plus=e.target.closest('[data-plus]')?.dataset.plus,minus=e.target.closest('[data-minus]')?.dataset.minus;if(plus)changeQty(plus,1);if(minus)changeQty(minus,-1);});$('productSearch').addEventListener('input',scheduleCatalogSearch);$('categoryFilter').addEventListener('change',updateSubcategories);$('subcategoryFilter').addEventListener('change',scheduleCatalogSearch);$('demoOrderBtn').addEventListener('click',demoOrder);$('submitOrderBtn').addEventListener('click',submitOrder);$('normalBtn').addEventListener('click',()=>{state.scenario='normal';updateScenario();});$('peakBtn').addEventListener('click',()=>{state.scenario='peak';updateScenario();});$('timeSlot').addEventListener('change',()=>{state.slot=$('timeSlot').value;renderCrowd();updateScenario();});$('playBtn').addEventListener('click',playPause);$('resetBtn').addEventListener('click',()=>{resetPlayback();log('已重开当前教学模拟订单，机器人回到入口。');});$('safetyTestBtn').addEventListener('click',toggleBlock);$('overloadBtn').addEventListener('click',toggleOverload);$('cameraResetBtn').addEventListener('click',()=>scene3d.resetCamera());$('stockoutSelect').addEventListener('change',()=>{state.stockoutId=$('stockoutSelect').value;log(state.stockoutId?`缺货演示已选中 ${productById.get(state.stockoutId).name}；机器人到货架时等待顾客决定。`:'缺货演示已关闭。');});$('acceptSubBtn').addEventListener('click',()=>decideSubstitution(true));$('skipSubBtn').addEventListener('click',()=>decideSubstitution(false));$('handoffBtn').addEventListener('click',confirmHandoff);$('orderQueue').addEventListener('click',e=>{const id=e.target.closest('[data-cancel]')?.dataset.cancel;if(id)cancelOrder(id);if(e.target.closest('[data-cancel-active]'))cancelActive();});
