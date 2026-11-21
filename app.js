@@ -307,7 +307,7 @@ function demoOrder(){
  renderCart();renderRecommendations();renderOrderState();
  $('orderMessage').textContent='已装入 4 件课堂示例商品。点击教学模拟付款；若当前订单仍在执行，新订单会排队。';
 }
-function toggleOverload(){const id=products.find(p=>p.name==='饮料箱').id;changeQty(id,state.cart.has(id)?-state.cart.get(id):1);$('orderMessage').textContent=state.cart.has(id)?'已加入 6 kg 饮料箱。请提交这张教学模拟订单，机器人处理时会检查载重。':'测试饮料箱已移除；当前已付款订单不受影响。';}
+function toggleOverload(){const id=products.find(p=>p.name==='饮料箱').id;changeQty(id,state.cart.has(id)?-state.cart.get(id):3);$('orderMessage').textContent=state.cart.has(id)?'已加入 3 箱 × 6 kg 教学压力测试饮料。提交后机器人会因超过 12 kg 而保持在入口。':'压力测试饮料箱已移除；当前已付款订单不受影响。';}
 scene3d=createStoreScene($('scene3d'),$('storeMap'));drawBaseMap();drawFixtures();populateFilters();renderCatalogue();renderCart();renderInventory();renderRecommendations();renderCrowd();resetPlayback();
 loadResearch().then(data=>{
  research=data;
