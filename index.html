@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f4ee" />
+    <meta name="description" content="INT6143 超市购物机器人完整流程交互演示：识别、预测、路径规划、避让、取货与结账。" />
+    <title>超市机器人购物流程 · INT6143</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/controls/OrbitControls.js":"./vendor/OrbitControls.js"}}</script>
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="masthead">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">R</span><span>INT6143 <span class="brand-light">/ 交互演示</span></span></div>
+        <div class="masthead-right"><span class="status-dot"></span>教学模拟 · 非真实设备测试</div>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">SMART SUPERMARKET · INTERACTIVE DEMO</p>
+            <h1 id="page-title">看机器人如何<span>完成一次购物</span></h1>
+            <p class="intro-copy">顾客先选商品并完成教学模拟付款，机器人再读取订单，从入口出发购物、避障、结账，并从另一出口离开。</p>
+          </div>
+          <div class="intro-note"><span class="intro-note-icon">↗</span><span>先选商品并模拟付款<br />再点击「播放购物流程」</span></div>
+        </section>
+
+        <section class="order-section" aria-labelledby="order-title">
+          <div class="order-head"><div><p class="section-kicker">01 / 顾客下单</p><h2 id="order-title">选择商品，模拟付款</h2><p>商品、价格、重量、库存和客流均为教学演示假设；不收集银行卡资料。</p></div><button id="demoOrderBtn" class="secondary-btn" type="button">装入课堂示例订单</button></div>
+          <div class="order-grid"><div class="order-panel"><div class="catalog-filters"><label>搜索商品<input id="productSearch" type="search" placeholder="例如：苹果、牛奶、大米" /></label><label>商品大类<select id="categoryFilter"></select></label><label>细分类<select id="subcategoryFilter"></select></label></div><div id="catalogue" class="catalogue"></div></div>
+          <div class="order-panel cart-panel"><h3>顾客购物车</h3><div id="cartList"></div><div id="cartSummary" class="cart-summary"></div><p id="minimumNotice" class="order-message" role="status"></p><p id="orderMessage" class="order-message" role="status">尚未提交订单。机器人等待顾客完成教学模拟付款。</p><button id="submitOrderBtn" type="button" class="primary-btn order-submit">教学模拟付款并提交订单</button><p class="assumption">机器人起购金额 ¥30.00（教学演示假设）；此按钮不发起真实交易。</p><div class="recommend-box"><h3>关联商品推荐</h3><div id="recommendations"></div></div></div></div>
+          <div class="queue-panel"><div><p class="section-kicker">订单队列 · 教学模拟</p><h3>机器人按提交顺序处理</h3><p>当前订单执行中仍可提交下一张订单；新购物车不会改动已付款订单。队列只在本次网页会话保留，刷新后清空。</p></div><ol id="orderQueue" aria-live="polite"></ol></div>
+        </section>
+
+        <section class="inventory-panel" aria-label="库存预警与人工补货"><div><p class="section-kicker">库存管理 · 教学模拟</p><h2>低于 10% 自动预警，员工确认补货</h2><p>每种商品货架容量假设为 20 件；库存 1 件是 5%，0 件提前提示缺货。系统发出提醒，员工点击后才更新库存。</p></div><div id="inventoryAlerts" class="inventory-alerts" aria-live="polite"></div></section>
+
+        <section class="analytics-grid" aria-label="教学数据分析"><div class="info-card"><p class="section-kicker">02 / 分时段客流</p><h2>哪个货架附近更拥挤？</h2><label class="time-select">选择工作日时段 <select id="timeSlot"></select></label><p id="crowdSummary" class="card-subcopy"></p><div id="crowdTable" class="crowd-table"></div><p class="assumption">热力颜色与人数由下方 18 货架教学样本计算，并同步显示在 3D 场景。不是实际客流预测。</p></div><div class="info-card"><p class="section-kicker">03 / 共购与陈列</p><h2>教学购物篮关联分析</h2><p id="miningMethod" class="card-subcopy"></p><div id="ruleTable" class="rule-table"></div><h3>相邻陈列建议</h3><div id="shelfSuggestions"></div></div></section>
+
+        <section class="workspace" aria-label="机器人购物演示">
+          <div class="map-column">
+            <div class="panel-head">
+              <div><p class="section-kicker">04 / 3D 超市场景</p><h2>购物路线实时演示</h2></div>
+              <div class="scenario-switch" role="group" aria-label="人流场景">
+                <button id="normalBtn" type="button" class="scenario-btn" aria-pressed="true">普通人流</button>
+                <button id="peakBtn" type="button" class="scenario-btn" aria-pressed="false">工作日高峰</button>
+              </div>
+            </div>
+
+            <div class="map-card">
+              <div class="map-topline"><span id="mapSituation">通道畅通，按最短安全路线行驶</span><span class="map-scale">立体场景 · 拖动旋转 · 滚轮缩放</span></div>
+              <div class="map-frame">
+                <div id="scene3d" class="scene-3d" role="img" aria-label="可旋转的三维超市，显示货架、行人、机器人与购物路线"></div>
+                <div class="scene-controls"><span class="scene-badge">3D LIVE</span><span class="scene-hint">拖动旋转 · 滚轮缩放</span><button id="cameraResetBtn" type="button" aria-label="复位三维视角">复位视角</button></div>
+                <svg id="storeMap" class="fallback-map" viewBox="-28 -22 1456 944" role="img" aria-label="超市货架与机器人购物路径地图" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                  <defs>
+                    <pattern id="floorGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e9ede9" stroke-width="1" /></pattern>
+                    <filter id="robotShadow" x="-100%" y="-100%" width="300%" height="300%"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#163248" flood-opacity=".25" /></filter>
+                  </defs>
+                  <rect x="0" y="0" width="1400" height="900" rx="18" class="store-floor" />
+                  <rect x="0" y="0" width="1400" height="900" rx="18" fill="url(#floorGrid)" />
+                  <g id="aisles"></g>
+                  <g id="fixtures"></g>
+                  <g id="shelves"></g>
+                  <g id="comparisonRoute"></g>
+                  <g id="plannedRoute"></g>
+                  <g id="traveledRoute"></g>
+                  <g id="crowd"></g>
+                  <g id="destinations"></g>
+                  <g id="robotLayer"></g>
+                </svg>
+              </div>
+              <div class="map-legend" aria-label="地图图例">
+                <span><i class="legend-line planned"></i>当前规划</span>
+                <span><i class="legend-line original"></i>原计划</span>
+                <span><i class="legend-line traveled"></i>已走路线</span>
+                <span><i class="legend-dot person"></i>行人</span>
+                <span><i class="legend-square"></i>货架</span>
+              </div>
+            </div>
+
+            <div class="control-bar">
+              <div class="control-buttons">
+                <button id="playBtn" class="primary-btn" type="button"><span aria-hidden="true">▶</span><span id="playLabel">播放购物流程</span></button>
+                <button id="resetBtn" class="secondary-btn" type="button"><span aria-hidden="true">↺</span>重新开始</button>
+              </div>
+              <div class="control-progress"><div class="progress-caption"><span id="progressText">准备出发</span><span id="progressPercent">0%</span></div><div class="progress-track"><div id="progressFill"></div></div></div>
+            </div>
+          </div>
+
+          <aside class="sidebar" aria-label="购物进度与状态">
+            <div class="side-card current-card">
+              <p class="section-kicker">05 / 当前任务</p>
+              <div class="current-heading"><span class="robot-icon">●</span><div><p class="small-label">机器人正在</p><h2 id="currentAction">等待出发</h2></div></div>
+              <p id="currentDetail" class="current-detail">请先在上方选择商品并完成教学模拟付款。</p>
+              <div class="status-pills"><span id="nextTarget">下一站：等待订单</span><span id="motionStatus">状态：待机</span></div>
+              <button id="safetyTestBtn" class="side-test-btn" type="button" aria-pressed="false">模拟全部通道封闭</button>
+              <button id="suddenPersonBtn" class="side-test-btn light" type="button" aria-pressed="false">模拟行人突然靠近</button>
+              <p class="assumption">独立安全层先减速或停车，再由 A* 规划；机器人宽度和制动距离尚未经过实物校准。</p>
+              <div class="stockout-control"><label for="stockoutSelect">缺货演示：选择当前订单商品</label><select id="stockoutSelect"><option value="">不模拟缺货</option></select><p>机器人到货架后会暂停，等待顾客确认替代商品。</p></div>
+              <div id="stockoutPanel" class="decision-panel" hidden><h3>缺货，请顾客确认</h3><p id="stockoutDetail"></p><div><button id="acceptSubBtn" type="button">同意替代</button><button id="skipSubBtn" type="button">不替代，跳过</button></div></div>
+              <div id="assistPanel" class="decision-panel" hidden><h3>需员工协助取货</h3><p id="assistDetail"></p><button id="confirmAssistBtn" type="button">员工已核对商品并协助取货</button></div>
+              <div id="handoffPanel" class="decision-panel" hidden><h3>出口取货交接</h3><p id="handoffDetail"></p><button id="handoffBtn" type="button">确认顾客已在出口取货</button></div>
+            </div>
+
+            <div class="side-card">
+              <div class="card-title-row"><div><p class="section-kicker">06 / 已付款订单</p><h3 id="orderListHeading">等待顾客下单</h3></div><span class="basket-glyph" aria-hidden="true">▣</span></div>
+              <ul class="shopping-list" id="shoppingList"></ul>
+              <div class="load-label"><span>当前载重</span><strong id="loadText">0.0 / 12.0 kg</strong></div>
+              <div class="load-track"><div id="loadFill"></div></div>
+              <p class="assumption">载重上限与商品重量均为教学演示假设。</p>
+              <button id="overloadBtn" class="side-test-btn light" type="button" aria-pressed="false">＋ 加入 6 kg 饮料箱，测试超载</button>
+              <p id="capacityWarning" class="capacity-warning" hidden>订单超过 12 kg，机器人无法出发。可取消当前待执行订单并重新下单。</p>
+            </div>
+
+            <div class="side-card timeline-card"><p class="section-kicker">07 / 购物流程</p><ol id="timeline" class="timeline"></ol></div>
+          </aside>
+        </section>
+
+        <section class="lower-grid" aria-label="方法与对比">
+          <div class="info-card explanation-card">
+            <p class="section-kicker">08 / 数据如何改变路线</p><h2>识别 → 预测 → 规划 → 避让</h2>
+            <div class="logic-steps">
+              <div><span class="logic-number">01</span><h3>识别与分类</h3><p>把前方目标分为行人、购物车或固定货架；商品按货架定位后核对。</p></div>
+              <div><span class="logic-number">02</span><h3>人流预测</h3><p>以时段和货架人数教学样本计算拥堵程度及通行时间；未训练真实预测模型。</p></div>
+              <div><span class="logic-number">03</span><h3>路径规划</h3><p>A* 综合距离、预计延误和安全风险选路；货架始终不可通行。</p></div>
+              <div><span class="logic-number">04</span><h3>实时避让</h3><p>遇到行人先减速或停车；通道拥堵时改道，无安全路线时等待。</p></div>
+            </div>
+            <p class="concept-note">购物篮关联分析、商品分区、客流分析和障碍物分类属于数据挖掘相关部分；本网页用教学样本和模拟分类事件说明逻辑，未训练真实模型。A* 使用这些结果规划路线；3D 动画不是机器人实验。</p>
+          </div>
+          <div class="info-card comparison-card">
+            <p class="section-kicker">09 / 改道指标对比</p><h2>原路线与新路线</h2>
+            <p class="card-subcopy">以下为根据示意地图计算的教学演示值，非真实设备实验结果。</p>
+            <table><thead><tr><th>指标</th><th>原路线（按当前客流评估）</th><th>新路线（当前场景）</th></tr></thead><tbody id="comparisonBody"></tbody></table>
+            <div id="comparisonInsight" class="insight">高峰时，机器人会绕开拥堵通道，优先保证行人安全。</div>
+          </div>
+        </section>
+
+        <section class="expert-grid" aria-label="专业验证与运营边界">
+          <div class="info-card"><p class="section-kicker">10 / 可复核的路线对照</p><h2>同一订单，逐项加入信息</h2><p>固定当前订单、时段与人流，比较“仅距离”“距离＋通行时间”“距离＋时间＋风险”三种 A* 成本。仅距离是研究基线，可能不安全，机器人不会按它执行。</p><button id="benchmarkBtn" type="button" class="secondary-btn">计算当前订单对照</button><div id="benchmarkResult" class="expert-result" role="status">请先模拟付款，再点击计算。</div><p class="assumption">另外枚举四个工作日时段 × 两种人流，共 8 个固定教学场景；这不是随机重复实验。关联规则与 K-means 尚无真实训练数据，不能宣称消融效果。</p></div>
+          <div class="info-card"><p class="section-kicker">11 / 数据质量与漂移</p><h2>先检查样本，再谈预测</h2><p id="dataAudit" class="expert-result"></p><p id="driftAudit" class="expert-result"></p><p class="assumption">以 09:00 为教学基线；单个货架人数相差至少 3 人时提示重新采样。缺少真实通行时间、传感器标注与跨周测试集，因此没有训练回归或分类模型。</p></div>
+          <div class="info-card"><p class="section-kicker">12 / 实物取货可行性</p><h2>商品能否由机器人取走？</h2><div id="pickupFeasibility" class="expert-result"></div><p>重箱、海鲜、肉类及冷冻商品在本演示中需要员工核对并协助取货；冷链商品须保持温控。网页没有抓手、条码枪或制冷设备，不能证明自主抓取能力。</p></div>
+          <div class="info-card"><p class="section-kicker">13 / 故障演练</p><h2>意外发生时安全停车</h2><label class="time-select">选择教学故障 <select id="faultSelect"><option value="sensor">传感器暂时失效</option><option value="localization">定位丢失</option><option value="network">订单网络中断</option><option value="battery">电量不足</option><option value="wrongItem">商品核对不一致</option></select></label><div class="expert-actions"><button id="injectFaultBtn" type="button" class="secondary-btn">注入故障</button><button id="clearFaultBtn" type="button" class="secondary-btn">人工排查后恢复</button></div><p id="faultState" class="expert-result" role="status">当前无故障。</p><p>故障期间停止移动；人工排查并确认后才恢复。出口无人取货由现有交接步骤继续等待。</p></div>
+          <div class="info-card"><p class="section-kicker">14 / 推荐效果待验证</p><h2>共购关联不等于增购效果</h2><p>当前推荐来自 12 篮教学样本的共购比例。真实评估需在获得授权后，将顾客随机分成显示推荐与不显示推荐两组，比较加购、购买及退货率；同时检查冷链、食品与日化分隔。网页未开展顾客 A/B 实验，也没有真实销售提升数据。</p></div>
+        </section>
+
+        <section class="event-section" aria-labelledby="event-title"><div><p class="section-kicker">15 / 实时事件</p><h2 id="event-title">机器人决策记录</h2></div><ul id="eventLog" class="event-log" aria-live="polite"></ul></section>
+      </main>
+
+      <footer><span>INT6143 · 小组作业交互演示</span><span>地图、重量、人流与时间均为教学演示假设</span></footer>
+    </div>
+  </body>
+</html>
