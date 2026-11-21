@@ -2,6 +2,12 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <script>
+      // 教学演示展示至北京时间 2026-12-31 23:59:59。
+      if (Date.now() >= Date.parse('2026-12-31T16:00:00Z')) {
+        window.location.replace('./expired.html');
+      }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f5f4ee" />
     <meta name="description" content="INT6143 超市购物机器人完整流程交互演示：识别、预测、路径规划、避让、取货与结账。" />
