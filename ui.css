@@ -45,6 +45,10 @@ main{grid-column:2;grid-row:2;min-width:0;padding:20px 0 28px}
 .sidebar{padding-top:0;max-height:calc(100vh - 180px);min-height:590px;overflow-y:auto;overscroll-behavior:contain;padding-right:3px}
 .sidebar .current-card{background:#244d50;border-color:#244d50}
 .sidebar .side-card{flex:none}
+.sidebar .small-label,.sidebar .status-pills span,.sidebar .stockout-control label,.sidebar .load-label{font-size:13px}
+.sidebar .current-detail,.sidebar .item-name{font-size:14px}
+.sidebar .side-test-btn,.sidebar .stockout-control p,.sidebar .assumption{font-size:12px}
+.sidebar .shopping-list li{line-height:1.5}
 .control-bar{min-height:72px}
 .primary-btn,.secondary-btn{font-size:14px}
 .map-legend{font-size:12px}
