@@ -32,7 +32,7 @@ jobs:
             cp expired.html _site/index.html
             touch _site/.nojekyll
           else
-            cp index.html style.css app.js storeData.js scene3d.js expired.html .nojekyll _site/
+            cp index.html style.css ui.css layout.js app.js storeData.js scene3d.js expired.html .nojekyll _site/
             cp -R vendor _site/vendor
           fi
       - uses: actions/configure-pages@v5
