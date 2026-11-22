@@ -7,6 +7,12 @@
       if (Date.now() >= Date.parse('2026-12-31T16:00:00Z')) {
         window.location.replace('./expired.html');
       }
+      if (location.protocol === 'file:') {
+        addEventListener('DOMContentLoaded', () => {
+          const catalogue = document.getElementById('catalogue');
+          if (catalogue) catalogue.innerHTML = '<p class="empty-note">请不要直接双击 index.html：浏览器会拦截本地商品数据。请双击同一文件夹中的「打开超市演示.command」，或 <a href="https://joe-8899.github.io/int6143-supermarket-robot/">打开在线演示</a>。</p>';
+        });
+      }
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f5f4ee" />
