@@ -205,7 +205,11 @@ def main(source):
         "departments": [{"id": i, "name": name, "count": len(by_department[i])} for i, name in department_names.items()],
         "aisles": [{"id": i, "name": name, "departmentId": next((p["departmentId"] for p in products if p["aisleId"] == i), None)} for i, name in aisle_names.items()]
     })
-    write("top-products.json", [dict(products_by_id[pid], frequency=count, reorderRate=round(reordered[pid]/count, 4)) for pid, count in frequency.most_common(50)])
+    top_products = [dict(products_by_id[pid], frequency=count, reorderRate=round(reordered[pid]/count, 4)) for pid, count in frequency.most_common(50)]
+    write("top-products.json", top_products)
+    # 首页所需的少量真实商品与分类直接随 JS 加载，避免等待完整研究结果。
+    seed = {"index": json.loads((OUT / "catalog/index.json").read_text(encoding="utf-8")), "top": top_products}
+    (ROOT / "catalogSeed.js").write_text("// 由 scripts/build_data.py 根据已清洗 Instacart 数据生成。\nexport const catalogSeed = " + json.dumps(seed, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
     write("top-reordered.json", [dict(products_by_id[pid], reorderedCount=count, frequency=frequency[pid]) for pid, count in reordered.most_common(10)])
 
     # Apriori：在真实 train 购物篮中先筛选支持度合格的单项，再生成二项候选。

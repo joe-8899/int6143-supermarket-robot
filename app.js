@@ -2,11 +2,12 @@
 import { createStoreScene } from './scene3d.js';
 import { STORE, shelves, layoutFixtures, products, timeSlots, crowdSamples, shelfCrowd, peopleForScenario } from './storeData.js';
 import { loadResearch, searchCatalog, convertProduct, propertyLabels, renderResearchDashboard, escapeHtml } from './instacart.js';
+import { catalogSeed } from './catalogSeed.js';
 import { getObstacleSnapshot, registerSensorProvider } from './sensorAdapter.js';
 const $=id=>document.getElementById(id), SVG='http://www.w3.org/2000/svg', CAPACITY=12, MIN_ORDER=30;
 const key=p=>p.join(','), dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]), money=n=>`¥${n.toFixed(2)}`, kg=n=>`${n.toFixed(2)} kg`;
 const productById=new Map(products.map(p=>[p.id,p]));
-let research=null,catalogResults=[],catalogRequest=0,catalogTimer=0;
+let research=null,catalogIndex=catalogSeed.index,catalogResults=[],catalogRequest=0,catalogTimer=0;
 window.INT6143_SENSOR = Object.freeze({registerProvider:registerSensorProvider});
 const substituteNames={'苹果':'香蕉','香蕉':'苹果','橙子':'苹果','纯牛奶':'低脂牛奶','低脂牛奶':'纯牛奶','大米':'糙米','糙米':'大米','洗衣液':'浓缩洗衣液','浓缩洗衣液':'洗衣液','鸡胸肉':'猪肉','猪肉':'鸡胸肉','鲜虾':'三文鱼','三文鱼':'鲜虾'};
 const substituteFor=product=>product.sourceId?([...productById.values()].find(p=>p.sourceId&&p.id!==product.id&&p.aisleId===product.aisleId&&p.stock>0)||null):products.find(p=>p.name===substituteNames[product.name]);
@@ -78,9 +79,9 @@ function renderOrderState(){
  $('overloadBtn').setAttribute('aria-pressed',state.cart.has(products.find(p=>p.name==='饮料箱').id));
  renderQueue();renderStockout();
 }
-function populateFilters(){if(research){$('categoryFilter').innerHTML='<option value="">全部部门</option>'+research.index.departments.map(x=>`<option value="${x.id}">${escapeHtml(x.name)} (${x.count})</option>`).join('');updateSubcategories();}$('timeSlot').innerHTML=timeSlots.map(x=>`<option value="${x.id}">${x.label}</option>`).join('');}
-function updateSubcategories(){if(!research)return;const dept=$('categoryFilter').value,aisles=research.index.aisles.filter(x=>!dept||x.departmentId===Number(dept));$('subcategoryFilter').innerHTML='<option value="">全部 aisle</option>'+aisles.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');scheduleCatalogSearch();}
-function scheduleCatalogSearch(){if(!research)return;clearTimeout(catalogTimer);const request=++catalogRequest;$('catalogue').innerHTML='<p class="empty-note">正在搜索真实商品数据…</p>';catalogTimer=setTimeout(async()=>{try{const query=$('productSearch').value,dept=$('categoryFilter').value,aisle=$('subcategoryFilter').value;const rows=!query&&!dept&&!aisle?research.top.slice(0,36):await searchCatalog(research.index,query,dept,aisle);if(request!==catalogRequest)return;catalogResults=rows.map(row=>{const id=`I${row.id}`;if(!productById.has(id))productById.set(id,convertProduct(row));return productById.get(id);});renderCatalogue();}catch(error){if(request===catalogRequest)$('catalogue').textContent=`商品数据载入失败：${error.message}`;}},250);}
+function populateFilters(){if(catalogIndex){$('categoryFilter').innerHTML='<option value="">全部部门</option>'+catalogIndex.departments.map(x=>`<option value="${x.id}">${escapeHtml(x.name)} (${x.count})</option>`).join('');updateSubcategories();}$('timeSlot').innerHTML=timeSlots.map(x=>`<option value="${x.id}">${x.label}</option>`).join('');}
+function updateSubcategories(){if(!catalogIndex)return;const dept=$('categoryFilter').value,aisles=catalogIndex.aisles.filter(x=>!dept||x.departmentId===Number(dept));$('subcategoryFilter').innerHTML='<option value="">全部 aisle</option>'+aisles.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');scheduleCatalogSearch();}
+function scheduleCatalogSearch(){if(!catalogIndex)return;clearTimeout(catalogTimer);const request=++catalogRequest,query=$('productSearch').value,dept=$('categoryFilter').value,aisle=$('subcategoryFilter').value;if(!query&&!dept&&!aisle){catalogResults=catalogSeed.top.slice(0,36).map(row=>productById.get(`I${row.id}`));renderCatalogue();return;}$('catalogue').innerHTML='<p class="empty-note">正在搜索真实商品数据…</p>';catalogTimer=setTimeout(async()=>{try{const rows=await searchCatalog(catalogIndex,query,dept,aisle);if(request!==catalogRequest)return;catalogResults=rows.map(row=>{const id=`I${row.id}`;if(!productById.has(id))productById.set(id,convertProduct(row));return productById.get(id);});renderCatalogue();}catch(error){if(request===catalogRequest)$('catalogue').textContent=`商品数据载入失败：${error.message}`;}},250);}
 function graph(){const nodes=new Map();function edge(a,b){for(const p of [a,b])if(!nodes.has(key(p)))nodes.set(key(p),{point:p,neighbors:[]});nodes.get(key(a)).neighbors.push(key(b));nodes.get(key(b)).neighbors.push(key(a));}const bottom=[5,...STORE.aisleXs,130,138];for(let i=1;i<bottom.length;i++)edge([bottom[i-1],8],[bottom[i],8]);for(const y of STORE.crossYs.slice(1))for(let i=1;i<STORE.aisleXs.length;i++)edge([STORE.aisleXs[i-1],y],[STORE.aisleXs[i],y]);for(const x of STORE.aisleXs)for(let i=1;i<STORE.verticalYs.length;i++)edge([x,STORE.verticalYs[i-1]],[x,STORE.verticalYs[i]]);return nodes;}
 const nodes=graph();
 function edgeCost(a,b,scenario,slot,mode='full'){const length=dist(a,b),center=[(a[0]+b[0])/2,(a[1]+b[1])/2];const nearby=shelves.filter(s=>dist(s.point,center)<20).map(s=>shelfCrowd(slot,s.id));const crowd=nearby.length?nearby.reduce((n,x)=>n+x,0)/nearby.length:0;const hot=scenario==='peak'&&a[1]===34&&b[1]===34&&Math.min(a[0],b[0])>=40&&Math.max(a[0],b[0])<=80;const predictedTime=length*(1+.025*crowd+(hot?2.6:0));const risk=length*(.025*crowd+(hot?2.8:0));const cost=mode==='distance'?length:mode==='time'?length+.45*predictedTime:length+.45*predictedTime+1.3*risk;return {length,predictedTime,risk,cost};}
@@ -300,21 +301,24 @@ function playPause(){
 }
 function toggleBlock(){state.blocked=!state.blocked;log(state.blocked?'安全测试：全部通道封闭，机器人停车等待。':'安全测试：通道重新开放，可继续沿路线行驶。');if(state.blocked)status('安全停车等待','全部通道封闭，机器人不穿过人群。','安全停车');else status('通道重新开放','恢复安全路线后继续购物。',state.running?'行驶中':'待机');renderScene();}
 function demoOrder(){
- if(!research){$('orderMessage').textContent='真实商品数据尚未载入，请稍后重试。';return;}
  const selectedShelves=new Set();
- const examples=research.top.filter(p=>{const item=productById.get(`I${p.id}`);if(!item||p.weightG<=0||p.weightG>2000||selectedShelves.has(item.shelfId))return false;selectedShelves.add(item.shelfId);return true;}).slice(0,4);
+ const examples=(research?.top||catalogSeed.top).filter(p=>{const item=productById.get(`I${p.id}`);if(!item||p.weightG<=0||p.weightG>2000||selectedShelves.has(item.shelfId))return false;selectedShelves.add(item.shelfId);return true;}).slice(0,4);
  state.cart=new Map(examples.map(p=>[`I${p.id}`,1]));
  renderCart();renderRecommendations();renderOrderState();
  $('orderMessage').textContent='已装入 4 件课堂示例商品。点击教学模拟付款；若当前订单仍在执行，新订单会排队。';
 }
 function toggleOverload(){const id=products.find(p=>p.name==='饮料箱').id;changeQty(id,state.cart.has(id)?-state.cart.get(id):3);$('orderMessage').textContent=state.cart.has(id)?'已加入 3 箱 × 6 kg 教学压力测试饮料。提交后机器人会因超过 12 kg 而保持在入口。':'压力测试饮料箱已移除；当前已付款订单不受影响。';}
-scene3d=createStoreScene($('scene3d'),$('storeMap'));drawBaseMap();drawFixtures();populateFilters();renderCatalogue();renderCart();renderInventory();renderRecommendations();renderCrowd();resetPlayback();
+for(const row of catalogSeed.top){const id=`I${row.id}`;if(!productById.has(id))productById.set(id,convertProduct(row));}
+catalogResults=catalogSeed.top.slice(0,36).map(row=>productById.get(`I${row.id}`));
+renderCatalogue();populateFilters();
+scene3d=createStoreScene($('scene3d'),$('storeMap'));drawBaseMap();drawFixtures();renderCart();renderInventory();renderRecommendations();renderCrowd();resetPlayback();
 loadResearch().then(data=>{
  research=data;
+ catalogIndex=data.index;
  for(const row of [...data.top,...Object.values(data.rules.products)]){const id=`I${row.id}`;if(!productById.has(id))productById.set(id,convertProduct(row));}
  rules=data.rules.rules.map(rule=>({...rule,from:`I${rule.from}`,to:`I${rule.to}`}));
  populateFilters();scheduleCatalogSearch();renderRules();renderRecommendations();renderResearchDashboard(data);renderDataAudit();
-}).catch(error=>{$('catalogue').textContent=`真实数据加载失败：${error.message}`;$('miningMethod').textContent='真实数据加载失败，请检查 public/data 文件。';});
+}).catch(error=>{$('miningMethod').textContent=`研究统计加载失败：${error.message}；商品目录仍可使用。`;});
 $('benchmarkBtn').addEventListener('click',runBenchmark);
 $('suddenPersonBtn').addEventListener('click',toggleSuddenPerson);
 $('injectFaultBtn').addEventListener('click',()=>setFault(true));
