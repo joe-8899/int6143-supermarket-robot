@@ -1,9 +1,9 @@
 // 顾客订单、教学数据计算、A* 规划与 3D 动画共用 storeData.js。
-import { createStoreScene } from './scene3d.js';
-import { STORE, shelves, layoutFixtures, products, timeSlots, crowdSamples, shelfCrowd, peopleForScenario } from './storeData.js';
+import { createStoreScene } from './scene3d.js?v=20261122-dynamic';
+import { STORE, shelves, layoutFixtures, products, timeSlots, crowdSamples, shelfCrowd, peopleForScenario } from './storeData.js?v=20261122-dynamic';
 import { loadResearch, searchCatalog, convertProduct, propertyLabels, renderResearchDashboard, escapeHtml } from './instacart.js';
 import { catalogSeed } from './catalogSeed.js';
-import { getObstacleSnapshot, registerSensorProvider } from './sensorAdapter.js';
+import { getObstacleSnapshot, registerSensorProvider } from './sensorAdapter.js?v=20261122-dynamic';
 const $=id=>document.getElementById(id), SVG='http://www.w3.org/2000/svg', CAPACITY=12, MIN_ORDER=30;
 const key=p=>p.join(','), dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]), money=n=>`¥${n.toFixed(2)}`, kg=n=>`${n.toFixed(2)} kg`;
 const productById=new Map(products.map(p=>[p.id,p]));
@@ -11,7 +11,7 @@ let research=null,catalogIndex=catalogSeed.index,catalogResults=[],catalogReques
 window.INT6143_SENSOR = Object.freeze({registerProvider:registerSensorProvider});
 const substituteNames={'苹果':'香蕉','香蕉':'苹果','橙子':'苹果','纯牛奶':'低脂牛奶','低脂牛奶':'纯牛奶','大米':'糙米','糙米':'大米','洗衣液':'浓缩洗衣液','浓缩洗衣液':'洗衣液','鸡胸肉':'猪肉','猪肉':'鸡胸肉','鲜虾':'三文鱼','三文鱼':'鲜虾'};
 const substituteFor=product=>product.sourceId?([...productById.values()].find(p=>p.sourceId&&p.id!==product.id&&p.aisleId===product.aisleId&&p.stock>0)||null):products.find(p=>p.name===substituteNames[product.name]);
-const state={cart:new Map(),queue:[],completed:[],orderCounter:0,stockoutId:'',shortage:null,resolutions:new Map(),assistPending:null,assistedShelves:new Set(),awaitingPickup:false,order:null,scenario:'normal',slot:'09',running:false,finished:false,blocked:false,suddenPerson:false,fault:'',stage:0,legDistance:0,pauseLeft:0,slowLeft:0,elapsed:0,lastFrame:0,bought:[],position:[...STORE.entrance],history:[[...STORE.entrance]],logs:[],detected:new Set(),plan:null,normalPlan:null};
+const state={cart:new Map(),queue:[],completed:[],orderCounter:0,stockoutId:'',shortage:null,resolutions:new Map(),assistPending:null,assistedShelves:new Set(),awaitingPickup:false,order:null,scenario:'normal',slot:'09',running:false,finished:false,blocked:false,suddenPerson:false,fault:'',stage:0,legDistance:0,pauseLeft:0,slowLeft:0,elapsed:0,crowdClock:0,lastFrame:0,bought:[],position:[...STORE.entrance],history:[[...STORE.entrance]],people:new Map(),visiblePeople:[],logs:[],detected:new Set(),avoidanceId:'',plan:null,normalPlan:null};
 let scene3d;
 function svg(tag,attrs={},parent){const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);parent?.appendChild(e);return e;}
 function clear(e){e.replaceChildren();}
@@ -138,7 +138,30 @@ function drawBaseMap(){for(const x of STORE.aisleXs)svg('line',{x1:x*10,y1:820,x
 function drawFixtures(){for(const f of layoutFixtures){svg('rect',{x:(f.x-f.w/2)*10,y:(STORE.height-f.y-f.h/2)*10,width:f.w*10,height:f.h*10,rx:8,class:'fixture-'+f.kind},$('fixtures'));svg('text',{x:f.x*10,y:(STORE.height-f.y)*10+4,class:'fixture-label'},$('fixtures')).textContent=f.label;}}
 function drawGate(point,label){svg('rect',{x:point[0]*10-28,y:(90-point[1])*10-14,width:56,height:28,rx:9,class:'gate'},$('destinations'));svg('text',{x:point[0]*10,y:(90-point[1])*10+4,class:'gate-label'},$('destinations')).textContent=label;}
 function drawDestinations(){clear($('destinations'));const stops=state.plan?.stops||[];stops.forEach((s,i)=>{svg('circle',{cx:s.point[0]*10,cy:(90-s.point[1])*10,r:15,class:`destination-circle ${i<state.stage?'destination-done':''}`},$('destinations'));svg('text',{x:s.point[0]*10,y:(90-s.point[1])*10+4,class:'destination-label'},$('destinations')).textContent=i<state.stage?'✓':i+1;});drawGate(STORE.entrance,'入口');drawGate(STORE.checkout,'结账');drawGate(STORE.exit,'出口');scene3d.setPickups(stops.map(s=>s.point),Math.min(state.stage,stops.length));}
-function drawCrowd(){clear($('crowd'));const counts=crowdSamples[state.slot];shelves.forEach((s,i)=>{const color=counts[i]>=5?'#ea7351':counts[i]>=3?'#efbc62':'#80bd91';svg('rect',{x:s.xMin*10,y:(90-s.yMax)*10,width:(s.xMax-s.xMin)*10,height:(s.yMax-s.yMin)*10,fill:color,opacity:counts[i]>=5?.38:.2,rx:11},$('crowd'));});for(const p of peopleForScenario(state.scenario,state.slot)){svg('circle',{cx:p.point[0]*10,cy:(90-p.point[1])*10,r:13,class:'crowd-halo'},$('crowd'));svg('circle',{cx:p.point[0]*10,cy:(90-p.point[1])*10,r:7,class:'crowd-person'},$('crowd'));}scene3d.setScenario(state.scenario,state.slot);}
+function drawPeople(delta=0){
+ const group=$('movingPeople'),targets=peopleForScenario(state.scenario,state.slot,state.crowdClock);
+ const positions=targets.map(person=>{
+  const previous=state.people.get(person.id)||person.point;
+  const distance=dist(previous,person.point),step=delta>0?Math.min(1,delta*3/Math.max(distance,.001)):0;
+  let point=[previous[0]+(person.point[0]-previous[0])*step,previous[1]+(person.point[1]-previous[1])*step];
+  // 行人接近机器人时沿原通道让开，避免双方同时停车造成死锁。
+  if(dist(point,state.position)<7){
+   point=[...previous];
+   if(dist(previous,state.position)<7){
+    const axis=person.id==='H2'||person.id==='H3'?0:1;
+    const direction=Math.sign(previous[axis]-state.position[axis])||1;
+    point[axis]+=direction*delta*3;
+   }
+  }
+  state.people.set(person.id,point);
+  return {...person,point};
+ });
+ state.visiblePeople=positions;
+ if(group.children.length!==positions.length*2){clear(group);for(const p of positions){svg('circle',{r:13,class:'crowd-halo','data-person-id':p.id},group);svg('circle',{r:7,class:'crowd-person','data-person-id':p.id},group);}}
+ positions.forEach((p,i)=>{for(const circle of [group.children[i*2],group.children[i*2+1]]){circle.setAttribute('cx',p.point[0]*10);circle.setAttribute('cy',(90-p.point[1])*10);circle.setAttribute('data-person-id',p.id);}});
+ scene3d.setPeople(positions);
+}
+function drawCrowd(){clear($('crowd'));const counts=crowdSamples[state.slot];shelves.forEach((s,i)=>{const color=counts[i]>=5?'#ea7351':counts[i]>=3?'#efbc62':'#80bd91';svg('rect',{x:s.xMin*10,y:(90-s.yMax)*10,width:(s.xMax-s.xMin)*10,height:(s.yMax-s.yMin)*10,fill:color,opacity:counts[i]>=5?.38:.2,rx:11},$('crowd'));});scene3d.setScenario(state.scenario,state.slot);drawPeople();}
 function drawRoutes(){clear($('comparisonRoute'));clear($('plannedRoute'));if(state.plan){if(state.scenario==='peak'&&state.normalPlan)svg('path',{d:pathData(state.normalPlan.points),class:'comparison-path'},$('comparisonRoute'));svg('path',{d:pathData(state.plan.points),class:'planned-path'},$('plannedRoute'));}scene3d.setRoutes(state.plan?.points||[],state.scenario==='peak'?state.normalPlan?.points:null);drawHistory();}
 function drawHistory(){clear($('traveledRoute'));if(state.history.length>1)svg('path',{d:pathData(state.history),class:'traveled-path'},$('traveledRoute'));scene3d.setHistory(state.history);}
 function drawRobot(){clear($('robotLayer'));const [x,y]=state.position;svg('circle',{cx:x*10,cy:(90-y)*10,r:23,class:'robot-body'},$('robotLayer'));scene3d.setRobot(state.position);}
@@ -197,7 +220,7 @@ function toggleSuddenPerson(){state.suddenPerson=!state.suddenPerson;renderFault
 function renderScene(){drawCrowd();drawRoutes();drawDestinations();drawRobot();renderOrderState();renderProgress();renderTimeline();renderPickupFeasibility();renderDataAudit();renderFaultState();$('normalBtn').setAttribute('aria-pressed',state.scenario==='normal');$('peakBtn').setAttribute('aria-pressed',state.scenario==='peak');$('safetyTestBtn').setAttribute('aria-pressed',state.blocked);$('safetyTestBtn').textContent=state.blocked?'解除封闭并继续':'模拟全部通道封闭';$('mapSituation').textContent=state.fault?'故障安全停车：等待人工排查':state.suddenPerson?'突发行人：独立安全层停车':state.blocked?'全部通道封闭：机器人安全停车等待':!state.order?'等待顾客教学模拟付款并下单':state.scenario==='peak'?'中部通道风险升高：显示原路线与重规划路线':'按照订单与当前客流选择最低安全代价路线';}
 function resetPlayback(preserveSafety=false){
  const fault=state.fault,suddenPerson=state.suddenPerson;
- state.running=false;state.finished=false;state.awaitingPickup=false;state.shortage=null;state.resolutions=new Map();state.assistPending=null;state.assistedShelves=new Set();state.blocked=false;state.suddenPerson=preserveSafety&&suddenPerson;state.fault=preserveSafety?fault:'';state.stage=0;state.legDistance=0;state.pauseLeft=0;state.slowLeft=0;state.elapsed=0;state.lastFrame=0;state.bought=[];state.position=[...STORE.entrance];state.history=[[...STORE.entrance]];state.detected=new Set();
+ state.running=false;state.finished=false;state.awaitingPickup=false;state.shortage=null;state.resolutions=new Map();state.assistPending=null;state.assistedShelves=new Set();state.blocked=false;state.suddenPerson=preserveSafety&&suddenPerson;state.fault=preserveSafety?fault:'';state.stage=0;state.legDistance=0;state.pauseLeft=0;state.slowLeft=0;state.elapsed=0;state.crowdClock=0;state.lastFrame=0;state.bought=[];state.position=[...STORE.entrance];state.history=[[...STORE.entrance]];state.people=new Map();state.visiblePeople=[];state.detected=new Set();state.avoidanceId='';
  state.plan=state.order?buildPlan(state.order.lines,state.scenario,state.slot):null;
  state.normalPlan=state.order?buildPlan(state.order.lines,'normal',state.slot):null;
  $('playLabel').textContent='播放购物流程';$('playBtn').firstElementChild.textContent='▶';
@@ -220,7 +243,7 @@ function submitOrder(){
  $('orderMessage').textContent=`${id}：教学模拟付款成功，${money(order.paid)}；${state.order===order?'机器人已读取。':`排队第 ${state.queue.length} 位。`}无真实交易。`;
  log(`${id} 已提交；${state.order===order?'开始处理':'进入等待队列'}。`);
 }
-function updateScenario(){if(!state.order||state.awaitingPickup){renderCrowd();renderScene();renderComparison();return;}resetPlayback(true);$('benchmarkResult').textContent='时段或人流条件已改变，请重新计算对照。';log(`切换至${state.scenario==='peak'?'工作日高峰':'普通人流'}、${state.slot}: 重新计算候选路线。`);if(state.scenario==='peak')log('中部通道教学样本拥堵，A* 改走风险较低的通道；橙色为普通场景原路线。');}
+function updateScenario(){if(!state.order||state.awaitingPickup){state.people=new Map();renderCrowd();renderScene();renderComparison();return;}resetPlayback(true);$('benchmarkResult').textContent='时段或人流条件已改变，请重新计算对照。';log(`切换至${state.scenario==='peak'?'工作日高峰':'普通人流'}、${state.slot}: 重新计算候选路线。`);if(state.scenario==='peak')log('中部通道教学样本拥堵，A* 改走风险较低的通道；橙色为普通场景原路线。');}
 function positionOnLeg(leg,at){let left=at;for(let i=0;i<leg.lengths.length;i++){const len=leg.lengths[i];if(left<=len||i===leg.lengths.length-1){const t=len?Math.min(1,left/len):1,a=leg.points[i],b=leg.points[i+1];return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];}left-=len;}return leg.points.at(-1);}
 function completeStop(stop){
  for(const line of stop.lines){
@@ -286,7 +309,60 @@ function cancelActive(){
  if(!state.order||state.running||state.stage>0||state.elapsed>0||state.awaitingPickup)return;
  const id=state.order.id;state.completed.push({id,status:'已取消'});state.order=null;activateNext();log(`${id} 已取消；机器人读取下一张排队订单。`);
 }
-function animate(now){if(!state.running)return;if(!state.lastFrame)state.lastFrame=now;const delta=Math.min((now-state.lastFrame)/1000,.08);state.lastFrame=now;state.elapsed+=delta;if(state.blocked){status('安全停车等待','所有通道封闭，机器人保持当前位置，不穿过人群。','等待通道开放');requestAnimationFrame(animate);return;}if(state.pauseLeft>0){state.pauseLeft=Math.max(0,state.pauseLeft-delta);requestAnimationFrame(animate);return;}const leg=state.plan?.legs[state.stage];if(!leg)return;const sensed=getObstacleSnapshot(state.scenario,state.slot),person=sensed.find(p=>p.type==='person'&&!state.detected.has(p.id)&&dist(state.position,p.point)<5.5);if(person){state.detected.add(person.id);state.slowLeft=1;log(`教学模拟分类：识别到${person.zone}行人；减速、保持间距并绕行。`);status('识别行人，减速避让',`靠近${person.zone}的顾客，低速从通道侧边通过。`,'低速避让');}const cart=sensed.find(o=>o.type==='cart');if(cart&&!state.detected.has('cart')&&dist(state.position,cart.point)<5.5){state.detected.add('cart');state.slowLeft=1;log('教学模拟分类：识别到购物车，减速并避让；固定货架在地图中设为不可通行。');}const slow=state.slowLeft>0;state.slowLeft=Math.max(0,state.slowLeft-delta);state.legDistance=Math.min(leg.length,state.legDistance+delta*(state.scenario==='peak'?22:26)*(slow?.45:1));state.position=positionOnLeg(leg,state.legDistance);if(dist(state.history.at(-1),state.position)>.15)state.history.push([...state.position]);drawHistory();drawRobot();renderProgress();if(state.legDistance>=leg.length-.001){state.legDistance=0;arrive();}if(state.running)requestAnimationFrame(animate);}
+function distanceToSegment(point,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],length2=dx*dx+dy*dy,t=length2?Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/length2)):0;return dist(point,[a[0]+dx*t,a[1]+dy*t]);}
+function movementIsSafe(from,to,obstacles){
+ if(to[0]<2||to[0]>138||to[1]<5||to[1]>84)return false;
+ for(const shelf of shelves){
+  const steps=Math.max(1,Math.ceil(dist(from,to)/.5));
+  for(let i=0;i<=steps;i++){const x=from[0]+(to[0]-from[0])*i/steps,y=from[1]+(to[1]-from[1])*i/steps;
+   if(x>shelf.xMin-1.1&&x<shelf.xMax+1.1&&y>shelf.yMin-1.1&&y<shelf.yMax+1.1)return false;}
+ }
+ return obstacles.every(o=>distanceToSegment(o.point,from,to)>=(o.type==='cart'?3.2:3));
+}
+function safeNextMove(leg,advance,obstacles){
+ const from=state.position,progress=Math.min(leg.length,state.legDistance+advance),base=positionOnLeg(leg,progress);
+ if(movementIsSafe(from,base,obstacles))return {point:base,progress,kind:'route'};
+ const before=positionOnLeg(leg,state.legDistance),after=positionOnLeg(leg,Math.min(leg.length,progress+1));
+ const dx=after[0]-before[0],dy=after[1]-before[1],length=Math.hypot(dx,dy)||1,normal=[-dy/length,dx/length];
+ if(leg.length-progress>3.5){
+  for(const side of [1,-1]){const point=[base[0]+normal[0]*side*3.5,base[1]+normal[1]*side*3.5];
+   if(movementIsSafe(from,point,obstacles))return {point,progress,kind:'detour'};}
+ }
+ for(const side of [1,-1]){const point=[from[0]+normal[0]*side*Math.min(advance,1),from[1]+normal[1]*side*Math.min(advance,1)];
+  if(dist(point,before)<=3.8&&movementIsSafe(from,point,obstacles))return {point,progress:state.legDistance,kind:'sidestep'};}
+ return null;
+}
+function animate(now){
+ if(!state.running)return;
+ if(!state.lastFrame)state.lastFrame=now;
+ const delta=Math.min((now-state.lastFrame)/1000,.08);
+ state.lastFrame=now;state.elapsed+=delta;state.crowdClock+=delta;drawPeople(delta);
+ if(state.blocked){status('安全停车等待','所有通道封闭，机器人保持当前位置，不穿过人群。','等待通道开放');requestAnimationFrame(animate);return;}
+ if(state.pauseLeft>0){state.pauseLeft=Math.max(0,state.pauseLeft-delta);requestAnimationFrame(animate);return;}
+ const leg=state.plan?.legs[state.stage];if(!leg)return;
+ const sensed=getObstacleSnapshot(state.scenario,state.slot,state.crowdClock,state.visiblePeople);
+ const obstacles=sensed;
+ const advance=delta*(state.scenario==='peak'?22:26);
+ const move=safeNextMove(leg,advance,obstacles);
+ if(!move){
+  const threat=sensed.filter(o=>dist(o.point,state.position)<8).sort((a,b)=>dist(a.point,state.position)-dist(b.point,state.position))[0];
+  const id=threat?.id||'通道';
+  if(state.avoidanceId!==`wait-${id}`){log(`前方${threat?.type==='cart'?'购物车':'行人'}占用安全距离：机器人停车等待通道畅通。`);state.avoidanceId=`wait-${id}`;}
+  status('前方有人，停车等待','当前没有保持安全距离的绕行空间；行人离开后再继续。','安全停车');
+  requestAnimationFrame(animate);return;
+ }
+ if(move.kind!=='route'){
+  const threat=sensed.filter(o=>dist(o.point,state.position)<8).sort((a,b)=>dist(a.point,state.position)-dist(b.point,state.position))[0];
+  const id=threat?.id||'通道';
+  if(state.avoidanceId!==`detour-${id}`){log(`动态避障：识别前方${threat?.type==='cart'?'购物车':'行人'}，减速并从安全侧绕行。`);state.avoidanceId=`detour-${id}`;}
+  status('识别障碍，减速避让','前方有行人或购物车，机器人选择可通行的侧边，并持续检查安全距离。','低速避让');
+ }else if(state.avoidanceId){state.avoidanceId='';status(`前往${nextName()}`,'前方安全，沿路线继续行驶。','行驶中');}
+ state.legDistance=move.progress;state.position=move.point;
+ if(dist(state.history.at(-1),state.position)>.15)state.history.push([...state.position]);
+ drawHistory();drawRobot();renderProgress();
+ if(state.legDistance>=leg.length-.001){state.legDistance=0;arrive();}
+ if(state.running)requestAnimationFrame(animate);
+}
 function playPause(){
  if(state.shortage){status('请先确认缺货替代','请在缺货面板选择「同意替代」或「不替代，跳过」。','等待顾客确认');return;}
  if(state.assistPending){status('请先完成员工协助取货','请在协助面板确认实物已核对并取货。','人工协助');return;}
@@ -312,6 +388,8 @@ for(const row of catalogSeed.top){const id=`I${row.id}`;if(!productById.has(id))
 catalogResults=catalogSeed.top.slice(0,36).map(row=>productById.get(`I${row.id}`));
 renderCatalogue();populateFilters();
 scene3d=createStoreScene($('scene3d'),$('storeMap'));drawBaseMap();drawFixtures();renderCart();renderInventory();renderRecommendations();renderCrowd();resetPlayback();
+let lastCrowdTick=performance.now();
+setInterval(()=>{const now=performance.now(),delta=Math.min((now-lastCrowdTick)/1000,.15);lastCrowdTick=now;if(!state.running){state.crowdClock+=delta;drawPeople(delta);}},100);
 loadResearch().then(data=>{
  research=data;
  catalogIndex=data.index;

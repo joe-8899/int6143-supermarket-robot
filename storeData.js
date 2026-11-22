@@ -45,10 +45,16 @@ export const crowdSamples={
  '20':[2,2,1,1,1,1,2,3,2,2,1,1,2,2,1,3,1,1]
 };
 export function shelfCrowd(slot,shelfId){return crowdSamples[slot]?.[shelves.findIndex(s=>s.id===shelfId)]??0;}
-export function peopleForScenario(scenario,slot='09'){
+export function peopleForScenario(scenario,slot='09',time=0){
  const result=shelves.map((s,i)=>({id:`P${i+1}`,zone:s.category,point:[s.point[0]+1.7+(slot==='20'?.7:slot==='13'?-.6:0),s.point[1]+(i%2?3:-3)+(slot==='18'?.7:0)]}));
  if(scenario==='peak') result.push({id:'H1',zone:'乳制品附近',point:[43,51]},{id:'H2',zone:'中部通道',point:[53,34]},{id:'H3',zone:'中部通道',point:[69,34]},{id:'H4',zone:'粮油附近',point:[82,72]});
  if(slot==='13') result.push({id:'T13',zone:'饮料附近',point:[22,30]});
  if(slot==='18') result.push({id:'T18',zone:'乳制品附近',point:[43,52]},{id:'T18b',zone:'粮油附近',point:[82,76]});
- return result;
+ // 教学模拟行人沿空通道来回行走，坐标由演示时间确定，便于画面与避障判断同步。
+ return result.map((person,i)=>{
+  const point=[...person.point],offset=Math.sin(time*.8+i*1.7)*2.2;
+  if(person.id==='H2'||person.id==='H3')point[0]+=offset*1.4;
+  else point[1]+=offset;
+  return {...person,point};
+ });
 }

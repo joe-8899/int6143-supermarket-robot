@@ -1,7 +1,7 @@
 // 3D 画面：绘制超市、货架、顾客、机器人和路线。
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { STORE, shelves, layoutFixtures, peopleForScenario, shelfCrowd } from "./storeData.js";
+import { STORE, shelves, layoutFixtures, peopleForScenario, shelfCrowd } from "./storeData.js?v=20261122-dynamic";
 
 const X_SCALE = .17;
 const floorPoint = ([x, y], height = .025) => new THREE.Vector3((x - STORE.width / 2) * X_SCALE, height, (STORE.height / 2 - y) * X_SCALE);
@@ -84,7 +84,7 @@ export function createStoreScene(container, fallback) {
     console.error("3D 场景无法启动", error);
     container.parentElement.classList.add("is-fallback");
     fallback.removeAttribute("aria-hidden");
-    return { setRobot() {}, setScenario() {}, setRoutes() {}, setHistory() {}, setBought() {}, setPickups() {}, resetCamera() {} };
+    return { setRobot() {}, setScenario() {}, setPeople() {}, setRoutes() {}, setHistory() {}, setBought() {}, setPickups() {}, resetCamera() {} };
   }
 }
 
@@ -276,6 +276,16 @@ function buildScene(container) {
   }
   requestAnimationFrame(frame);
 
+  function placePeople(positions) {
+    people.forEach((person, i) => {
+      person.visible = i < positions.length;
+      if (person.visible) {
+        const p = floorPoint(positions[i].point, 0);
+        person.position.set(p.x, 0, p.z);
+      }
+    });
+  }
+
   return {
     setRobot(point) {
       const next = floorPoint(point, 0), dx = next.x - robot.position.x, dz = next.z - robot.position.z;
@@ -285,16 +295,12 @@ function buildScene(container) {
     setScenario(scenario,slot="09") {
       const peak = scenario === "peak", positions = peopleForScenario(scenario,slot);
       heatTiles.forEach((tile,i)=>{const count=shelfCrowd(slot,shelves[i].id);tile.material.color.set(count>=5?0xe25d3b:count>=3?0xf2b34d:0x71b887);tile.material.opacity=count>=5?.48:count>=3?.34:.16;});
-      people.forEach((person, i) => {
-        person.visible = i < positions.length;
-        if (person.visible) {
-          const p = floorPoint(positions[i].point, 0); person.position.set(p.x, 0, p.z);
-        }
-      });
+      placePeople(positions);
       crowdZone.visible = peak;
       const cp = floorPoint(peak ? [74, 36.5] : [106, 81], 0);
       cart.position.set(cp.x, 0, cp.z);
     },
+    setPeople: placePeople,
     setRoutes(current, original) {
       disposeGroup(originalRoute); disposeGroup(plannedRoute);
       if (original?.length) originalRoute.add(ribbon(original, .14, 0xd28c63, .028, .8, true));
